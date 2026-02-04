@@ -1,0 +1,11 @@
+{
+  "jupyter-lite-schema-version": 0,
+  "jupyter-config-data": {
+    "appName": "Ing. Software - JavaScript",
+    "defaultKernel": "javascript",
+    "defaultUrl": "/lab/tree/01_testing_tdd.ipynb",
+    "faviconUrl": "/favicon.ico",
+    "exposeAppInBrowser": false,
+    "collaborative": false
+  }
+}
