@@ -23,7 +23,7 @@ El algoritmo de Canny es una técnica de procesamiento de imágenes utilizada pa
 
 ### 6. Ejemplo del algoritmo de Canny Edge Detection en JavaScript
 
-%%html
+```%%html
 <div id="canny_final_container" style="text-align: center; background: #1a1a1a; padding: 25px; border-radius: 20px; color: white; font-family: sans-serif;">
     <h2 style="color: #3498db;">Canny Edge: Detección de Bordes</h2>
     <p style="font-size: 13px; color: #aaa;">Usa derivadas y diferencias finitas para encontrar contornos.</p>
@@ -133,6 +133,7 @@ function iniciarIA_Canny() {
     requestAnimationFrame(procesarFrame);
 }
 </script>
+```
 
 ### 7. ¿El algoritmo Canny Edge Detection utiliza derivadas?
 [cite_start]**Sí.** En el contexto de una imagen, un borde se define matemáticamente como un cambio brusco en la intensidad de los píxeles[cite: 34]. [cite_start]El algoritmo de Canny busca los puntos donde la primera derivada de la función de intensidad de la imagen alcanza un máximo local (es decir, donde el gradiente es más pronunciado)[cite: 35].
@@ -175,7 +176,7 @@ La relación es directa. [cite_start]El núcleo aplica una **Diferencia Central*
 * [cite_start]**Punto 21:** Edición de máscara colocando un objeto[cite: 80].
 * [cite_start]**Punto 22:** Filtro en un punto específico (nariz)[cite: 81].
 
-%%html
+```%%html
 <div id="ar_final_box" style="text-align: center; background: #1a1a1a; padding: 20px; border-radius: 15px; color: white; font-family: sans-serif;">
     <h2 style="color: #3498db;">PROYECTO FINAL: Filtros AR 3D</h2>
     
@@ -452,6 +453,8 @@ function startIA() {
     }
 }
 </script>
+```
+
 ### 18. ¿MediaPipe utiliza Sobel?
 [cite_start]**No directamente.** MediaPipe utiliza Redes Neuronales Convolucionales (CNN)[cite: 158]. [cite_start]A diferencia del algoritmo Sobel, que utiliza fórmulas matemáticas fijas (kernels predefinidos) para buscar bordes, MediaPipe utiliza modelos entrenados con millones de imágenes para aprender a identificar patrones complejos como ojos, labios y contornos faciales, independientemente de los bordes simples[cite: 158].
 
@@ -464,7 +467,7 @@ function startIA() {
 ### 23. Escribir el mismo concepto pero usando Sobel
 [cite_start]Implementación de procesamiento de video en tiempo real utilizando el operador Sobel para detección de bordes mediante OpenCV.js[cite: 163].
 
-from IPython.display import display, HTML
+```from IPython.display import display, HTML
 
 # Interfaz unificada: Cámara + OpenCV.js + Método de Sobel (Sin Canny)
 opencv_realtime_sobel = """
@@ -563,3 +566,5 @@ opencv_realtime_sobel = """
 """
 
 display(HTML(opencv_realtime_sobel))
+```
+
