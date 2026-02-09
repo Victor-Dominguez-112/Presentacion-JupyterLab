@@ -135,6 +135,85 @@ function iniciarIA_Canny() {
 </script>
 ```
 
+# Análisis Matemático y Lógico de Nuestro Algoritmo AR
+
+En este proyecto, nuestro equipo no ha utilizado imágenes estáticas pre-cargadas para los filtros. En su lugar, hemos desarrollado un motor de renderizado basado en **Geometría Computacional** y **Álgebra Lineal**. A continuación, explicamos la lógica matemática interna que permite que los objetos se adapten al rostro en tiempo real.
+
+### 1. Transformación de Espacios Vectoriales (Mapeo Lineal)
+El modelo de Inteligencia Artificial (MediaPipe Face Mesh) nos devuelve una matriz de 468 puntos (landmarks). Sin embargo, estos puntos vienen en un **Espacio Normalizado**, es decir, son valores flotantes entre $0$ y $1$ donde:
+* $(0,0)$ representa la esquina superior izquierda.
+* $(1,1)$ representa la esquina inferior derecha.
+
+Para dibujar en el canvas, hemos aplicado una **Transformación Lineal de Escala** para mapear estos valores al **Espacio Cartesiano de Píxeles** ($640 \times 480$).
+
+La fórmula que hemos implementado para cada punto $P(x,y)$ es:
+
+$$
+P_{pixel} = P_{norm} \cdot \vec{S}
+$$
+
+Donde el vector de escala $\vec{S}$ corresponde a las dimensiones del canvas:
+$$
+x_{pixel} = x_{norm} \cdot Ancho_{canvas}
+$$
+$$
+y_{pixel} = y_{norm} \cdot Alto_{canvas}
+$$
+
+> **En nuestro código:** Esto se observa cuando pasamos los argumentos a las funciones de dibujo, por ejemplo: `nose.x * can_el.width`.
+
+---
+
+### 2. Escalamiento Dinámico (Geometría Proyectiva)
+Uno de los retos principales que enfrentamos fue lograr que los lentes o el sombrero cambiaran de tamaño si el usuario se acerca o aleja de la cámara (simulación de profundidad $Z$). Como no contamos con un sensor de profundidad real, utilizamos una **referencia métrica relativa**.
+
+Hemos seleccionado dos puntos ancla anatómicamente estables: los pómulos (Landmarks **#454** y **#234**). Calculamos la magnitud del vector diferencia entre ellos en el eje X para determinar el "ancho aparente" de la cara ($W_{cara}$).
+
+$$
+W_{cara} = |x_{454} - x_{234}| \cdot Ancho_{pixel}
+$$
+
+Este valor $W_{cara}$ se convierte en nuestro escalar base ($k$). Todas las figuras geométricas se dibujan como una función de $k$:
+* Radio de la nariz = $0.15 \cdot k$
+* Ancho de los lentes = $1.0 \cdot k$
+
+De esta forma, mantenemos la **proporcionalidad** euclidiana sin importar la distancia de la cámara.
+
+---
+
+### 3. Construcción de Primitivas Geométricas
+En lugar de pegar imágenes (bitmaps), hemos utilizado ecuaciones geométricas para rasterizar los objetos píxel por píxel.
+
+#### A. La Nariz (Gradientes Radiales)
+Para la nariz, no dibujamos un círculo plano. Para simular volumen (3D), implementamos una función de **Gradiente Radial** $G(r)$. Matemáticamente, interpolamos el color desde un centro desplazado $(x - \Delta, y - \Delta)$ hacia el radio exterior $r$.
+
+La ecuación base es la del círculo:
+$$
+(x - h)^2 + (y - k)^2 = r^2
+$$
+
+Al desplazar el foco del gradiente hacia la esquina superior izquierda, simulamos una fuente de luz, creando un efecto de esfericidad (especularidad) mediante el cálculo de la intensidad de color $I$ en función del radio.
+
+#### B. La Corona y el Sombrero (Polígonos y Traslación)
+Para estos objetos, definimos polígonos irregulares conectando una secuencia de vértices $V_1, V_2, \dots, V_n$.
+
+El desafío matemático aquí es la **Traslación de Vectores**. Si dibujáramos la corona en las coordenadas de la frente (Landmark #10), quedaría *dentro* de la cabeza. Para corregirlo, aplicamos un vector de desplazamiento negativo en el eje Y (recordando que en computación gráfica, el eje Y positivo va hacia abajo).
+
+$$
+P_{objeto} = P_{frente} + \vec{v}_{desplazamiento}
+$$
+
+Donde $\vec{v}_{desplazamiento} = (0, -0.6 \cdot W_{cara})$. Esto eleva el objeto proporcionalmente al tamaño de la cabeza detectada.
+
+---
+
+### 4. Topología de Malla (Teoría de Grafos)
+Finalmente, la "Malla Verde" que visualizamos es una representación directa de la topología del grafo que utiliza la red neuronal.
+* **Vértices ($V$):** Los 468 puntos detectados.
+* **Aristas ($E$):** Las conexiones predefinidas (teselación) que unen los puntos para formar triángulos.
+
+Hemos utilizado la función `drawConnectors` que recorre la matriz de adyacencia del grafo y renderiza las líneas que conectan los nodos $V_i$ y $V_j$, permitiendo visualizar la geometría subyacente que la computadora "ve" en el rostro.
+
 ### 7. ¿El algoritmo Canny Edge Detection utiliza derivadas?
 [cite_start]**Sí.** En el contexto de una imagen, un borde se define matemáticamente como un cambio brusco en la intensidad de los píxeles[cite: 34]. [cite_start]El algoritmo de Canny busca los puntos donde la primera derivada de la función de intensidad de la imagen alcanza un máximo local (es decir, donde el gradiente es más pronunciado)[cite: 35].
 
