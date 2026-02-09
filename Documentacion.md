@@ -23,7 +23,7 @@ El algoritmo de Canny es una técnica de procesamiento de imágenes utilizada pa
 
 ### 6. Ejemplo del algoritmo de Canny Edge Detection en JavaScript
 
-```%%html
+%%html
 <div id="canny_final_container" style="text-align: center; background: #1a1a1a; padding: 25px; border-radius: 20px; color: white; font-family: sans-serif;">
     <h2 style="color: #3498db;">Canny Edge: Detección de Bordes</h2>
     <p style="font-size: 13px; color: #aaa;">Usa derivadas y diferencias finitas para encontrar contornos.</p>
@@ -175,7 +175,7 @@ La relación es directa. [cite_start]El núcleo aplica una **Diferencia Central*
 * [cite_start]**Punto 21:** Edición de máscara colocando un objeto[cite: 80].
 * [cite_start]**Punto 22:** Filtro en un punto específico (nariz)[cite: 81].
 
-```%%html
+%%html
 <div id="ar_final_box" style="text-align: center; background: #1a1a1a; padding: 20px; border-radius: 15px; color: white; font-family: sans-serif;">
     <h2 style="color: #3498db;">PROYECTO FINAL: Filtros AR 3D</h2>
     
@@ -464,9 +464,7 @@ function startIA() {
 ### 23. Escribir el mismo concepto pero usando Sobel
 [cite_start]Implementación de procesamiento de video en tiempo real utilizando el operador Sobel para detección de bordes mediante OpenCV.js[cite: 163].
 
-
-
-```from IPython.display import display, HTML
+from IPython.display import display, HTML
 
 # Interfaz unificada: Cámara + OpenCV.js + Método de Sobel (Sin Canny)
 opencv_realtime_sobel = """
