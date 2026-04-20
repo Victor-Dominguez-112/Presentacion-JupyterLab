@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Péndulo Cónico Giratorio – p5.js + Cannon.js</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#000; overflow:hidden; font-family:monospace; }
+    #panel {
+      position:absolute; top:10px; left:10px; z-index:10;
+      color:#0f8; font-size:12px; line-height:2;
+      background:rgba(0,0,0,0.75); padding:12px 16px;
+      border-radius:8px; min-width:240px; border:1px solid #141;
+    }
+    #panel b { color:#fff; font-size:14px; }
+    label { color:#aga; color:#9c9; display:block; }
+    input[type=range]{ width:120px; accent-color:#0f8; vertical-align:middle; }
+    #badge {
+      position:absolute; top:10px; right:10px; z-index:10;
+      background:rgba(0,255,100,0.1); border:1px solid #0f8;
+      color:#0f8; font-size:11px; padding:6px 12px;
+      border-radius:6px; font-family:monospace;
+    }
+    #controls {
+      position:absolute; bottom:14px; left:50%;
+      transform:translateX(-50%);
+      display:flex; gap:10px; z-index:10;
+    }
+    button {
+      background:#0a2e0a; color:#0f8; border:1px solid #0f8;
+      padding:7px 18px; border-radius:4px; cursor:pointer; font-size:13px;
+    }
+    button:hover{ background:#0f8; color:#000; }
+    #loading {
+      position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      color:#0f8; font-size:20px; z-index:20;
+      text-align:center; line-height:2;
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading">⚙️ Iniciando Cannon.js...<br><small>física 3D real</small></div>
+
+<div id="panel" style="display:none">
+  <b>⭕ Péndulo Cónico – Cannon.js</b><br>
+  <small>Motor: p5.js + Cannon.js (física real)</small><br><br>
+  <label>Longitud L:
+    <input type="range" id="slL" min="80" max="260" value="180"
+      oninput="vL.textContent=this.value; rebuild()">
+    <span id="vL">180</span> px
+  </label>
+  <label>Ángulo cónico θ:
+    <input type="range" id="slA" min="5" max="60" value="25"
+      oninput="vA.textContent=this.value+'°'; rebuild()">
+    <span id="vA">25°</span>
+  </label>
+  <label>Vel. inicial ω:
+    <input type="range" id="slW" min="5" max="400" value="120"
+      oninput="vW.textContent=(this.value/100).toFixed(2)+' rad/s'; rebuild()">
+    <span id="vW">1.20 rad/s</span>
+  </label>
+  <label>Efecto Foucault:
+    <input type="range" id="slF" min="0" max="100" value="40"
+      oninput="vF.textContent=this.value+'%'">
+    <span id="vF">40%</span>
+  </label>
+  <label>Amortiguación:
+    <input type="range" id="slD" min="0" max="60" value="2"
+      oninput="vD.textContent=(this.value/1000).toFixed(3)">
+    <span id="vD">0.002</span>
+  </label>
+  <label>Elevación vista:
+    <input type="range" id="slEl" min="10" max="80" value="30"
+      oninput="vEl.textContent=this.value+'°'">
+    <span id="vEl">30°</span>
+  </label>
+  <br>
+  Vel: <span id="velb">—</span> | E: <span id="energy">—</span><br>
+  Radio: <span id="radius">—</span> px
+</div>
+
+<div id="badge">p5.js + Cannon.js</div>
+
+<div id="controls" style="display:none">
+  <button onclick="togglePause()">⏸ Pausa</button>
+  <button onclick="toggleTrail()">〰 Estela</button>
+  <button onclick="rebuild()">🔄 Reset</button>
+  <button onclick="addImpulse()">💥 Impulso</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+<script>
+// ── ESTADO GLOBAL ─────────────────────────────────────────────────────────────
+let world, bobBody, anchorBody, ropeConstraint;
+let paused    = false;
+let showTrail = true;
+let trail     = [];
+const TRAIL_MAX  = 800;
+const PX_TO_M    = 0.01;   // 1 px = 0.01 metros en Cannon
+const OMEGA_E    = 7.2921e-5;
+const TIME_SC    = 2000;
+
+let camAngle = 0.5;
+let isDrag   = false;
+let prevMX   = 0;
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+const sl       = id => parseFloat(document.getElementById(id).value);
+const getL     = () => sl('slL');
+const getTheta = () => sl('slA') * Math.PI / 180;
+const getOmega = () => sl('slW') / 100;
+const getFouc  = () => sl('slF') / 100 * OMEGA_E * TIME_SC;
+const getDamp  = () => sl('slD') / 1000;
+const getElev  = () => sl('slEl') * Math.PI / 180;
+
+// ── CONSTRUIR MUNDO CANNON ───────────────────────────────────────────────────
+function rebuild() {
+  if (world) {
+    // Limpiar mundo anterior
+    world.bodies.slice().forEach(b => world.remove(b));
+    world.constraints.slice().forEach(c => world.removeConstraint(c));
+  }
+
+  world = new CANNON.World();
+  world.gravity.set(0, -9.81, 0);
+  world.broadphase = new CANNON.NaiveBroadphase();
+  world.solver.iterations = 30;
+
+  const Lm  = getL() * PX_TO_M;       // longitud en metros
+  const th  = getTheta();
+  const R   = Lm * Math.sin(th);       // radio horizontal
+  const dy  = Lm * Math.cos(th);       // descenso vertical (positivo = abajo)
+  const om  = getOmega();              // velocidad angular rad/s
+
+  // Ancla (fija, masa 0)
+  anchorBody = new CANNON.Body({ mass: 0 });
+  anchorBody.addShape(new CANNON.Sphere(0.01));
+  anchorBody.position.set(0, 0, 0);
+  world.addBody(anchorBody);
+
+  // Bob (esfera física)
+  bobBody = new CANNON.Body({ mass: 1.0, linearDamping: getDamp() });
+  bobBody.addShape(new CANNON.Sphere(0.12));
+
+  // Posición inicial en el círculo
+  bobBody.position.set(R, -dy, 0);
+
+  // Velocidad tangencial para orbita circular: v = ω × R, perpendicular al radio en XZ
+  // Radio está en +X, así que velocidad tangencial es en +Z
+  const vt = om * R;
+  bobBody.velocity.set(0, 0, vt);
+
+  world.addBody(bobBody);
+
+  // Restricción de distancia = "cuerda" rígida
+  ropeConstraint = new CANNON.DistanceConstraint(bobBody, anchorBody, Lm);
+  world.addConstraint(ropeConstraint);
+
+  trail = [];
+  document.getElementById('radius').textContent = (R / PX_TO_M).toFixed(1);
+}
+
+// Fuerza de Coriolis (efecto Foucault) aplicada cada frame
+function applyCoriolis() {
+  const fouc = getFouc();
+  if (fouc === 0) return;
+  const v = bobBody.velocity;
+  // Ω vertical → componentes: Ωy = fouc
+  // F = -2m(Ω × v) con Ω = (0, fouc, 0)
+  // Ω × v = (fouc*vz - 0, 0 - 0, 0 - fouc*vx)
+  const fx =  2 * bobBody.mass * fouc * v.z;
+  const fz = -2 * bobBody.mass * fouc * v.x;
+  bobBody.applyForce(new CANNON.Vec3(fx, 0, fz), bobBody.position);
+}
+
+// ── PROYECCIÓN 3D → 2D ───────────────────────────────────────────────────────
+function project(x3, y3, z3, cx, cy) {
+  const elev = getElev();
+  const cosC = Math.cos(camAngle), sinC = Math.sin(camAngle);
+  const cosE = Math.cos(elev),     sinE = Math.sin(elev);
+  const rx   =  x3 * cosC - z3 * sinC;
+  const ry   =  y3;
+  const rz   =  x3 * sinC + z3 * cosC;
+  const ry2  =  ry * cosE - rz * sinE;
+  const fov  = 700;
+  const dep  = fov / (fov + rz * cosE + ry * sinE + 900);
+  return { sx: cx + rx * dep, sy: cy + ry2 * dep, dep };
+}
+
+// ── ESFERA 3D ────────────────────────────────────────────────────────────────
+function drawSphere(p, sx, sy, r, cr, cg, cb) {
+  p.noStroke();
+  p.fill(cr*0.1, cg*0.1, cb*0.1, 50);
+  p.ellipse(sx + r*0.4, sy + r*0.5, r*2.6, r*0.9);
+  for (let i = 10; i >= 0; i--) {
+    const t  = i / 10;
+    const ri = r * (0.12 + t * 0.88);
+    const br = 0.2 + t * 0.8;
+    const ox = -r * 0.3 * t;
+    const oy = -r * 0.3 * t;
+    p.fill(
+      Math.min(255, cr * br + 200 * (1-t) * 0.25),
+      Math.min(255, cg * br + 200 * (1-t) * 0.12),
+      Math.min(255, cb * br + 200 * (1-t) * 0.05),
+      240
+    );
+    p.ellipse(sx + ox, sy + oy, ri*2, ri*2);
+  }
+  p.fill(255, 255, 255, 185);
+  p.ellipse(sx - r*0.3, sy - r*0.32, r*0.38, r*0.38);
+}
+
+// ── SKETCH p5 ────────────────────────────────────────────────────────────────
+function startSketch() {
+  new p5(function(p) {
+
+    p.setup = function() {
+      p.createCanvas(window.innerWidth, window.innerHeight);
+      rebuild();
+    };
+
+    p.draw = function() {
+      p.background(5, 18, 8);
+
+      // ── Paso de física ──────────────────────────────────────────────────
+      if (!paused && world && bobBody) {
+        bobBody.linearDamping = getDamp();
+        applyCoriolis();
+        world.step(1/60, 1/60, 5);
+
+        // Guardar estela (convertir metros → px)
+        const inv = 1 / PX_TO_M;
+        if (showTrail) {
+          trail.push({
+            x:  bobBody.position.x * inv,
+            y: -bobBody.position.y * inv,  // Cannon Y positivo = arriba; pantalla Y positivo = abajo
+            z:  bobBody.position.z * inv
+          });
+          if (trail.length > TRAIL_MAX) trail.shift();
+        }
+      }
+
+      if (!bobBody) return;
+
+      const inv = 1 / PX_TO_M;
+      const bx  =  bobBody.position.x * inv;
+      const by  = -bobBody.position.y * inv;
+      const bz  =  bobBody.position.z * inv;
+      const L   = getL();
+
+      const cx = p.width  / 2;
+      const cy = p.height / 2 - 40;
+
+      if (!isDrag) camAngle += 0.003;
+
+      // ── Grilla del suelo ─────────────────────────────────────────────
+      p.stroke(15, 50, 20, 130);
+      p.strokeWeight(1);
+      const gs = 55, gn = 7;
+      for (let i = -gn; i <= gn; i++) {
+        const a = project(i*gs, by+30, -gn*gs, cx, cy);
+        const b = project(i*gs, by+30,  gn*gs, cx, cy);
+        p.line(a.sx, a.sy, b.sx, b.sy);
+        const c = project(-gn*gs, by+30, i*gs, cx, cy);
+        const d = project( gn*gs, by+30, i*gs, cx, cy);
+        p.line(c.sx, c.sy, d.sx, d.sy);
+      }
+
+      // Círculo de referencia (radio de la órbita)
+      const R = Math.sqrt(bx*bx + bz*bz);
+      p.noFill();
+      p.stroke(30, 120, 50, 130);
+      p.strokeWeight(1.5);
+      p.drawingContext.setLineDash([5, 5]);
+      p.beginShape();
+      for (let a = 0; a <= p.TWO_PI + 0.1; a += 0.08) {
+        const pt = project(R * Math.cos(a), by+28, R * Math.sin(a), cx, cy);
+        p.vertex(pt.sx, pt.sy);
+      }
+      p.endShape();
+      p.drawingContext.setLineDash([]);
+
+      // Cono de referencia
+      p.stroke(20, 70, 30, 55);
+      p.strokeWeight(1);
+      for (let a = 0; a < p.TWO_PI; a += p.PI / 4) {
+        const piv = project(0, 0, 0, cx, cy);
+        const rim = project(R * Math.cos(a), by, R * Math.sin(a), cx, cy);
+        p.line(piv.sx, piv.sy, rim.sx, rim.sy);
+      }
+
+      // ── Estela ────────────────────────────────────────────────────────
+      if (showTrail && trail.length > 1) {
+        for (let i = 1; i < trail.length; i++) {
+          const t0 = project(trail[i-1].x, trail[i-1].y, trail[i-1].z, cx, cy);
+          const t1 = project(trail[i  ].x, trail[i  ].y, trail[i  ].z, cx, cy);
+          const alpha = p.map(i, 0, trail.length, 0, 220);
+          const g2    = p.map(i, 0, trail.length, 60, 220);
+          p.stroke(30, g2, 80, alpha);
+          p.strokeWeight(1.8);
+          p.line(t0.sx, t0.sy, t1.sx, t1.sy);
+        }
+      }
+
+      // ── Sombra ────────────────────────────────────────────────────────
+      const shadow = project(bx, by+28, bz, cx, cy);
+      p.noStroke();
+      p.fill(30, 180, 60, 50);
+      p.ellipse(shadow.sx, shadow.sy, 30, 10);
+
+      // ── Soporte trípode ───────────────────────────────────────────────
+      const pivPt = project(0, 0, 0, cx, cy);
+      const legD = 55, legH = -28;
+      for (let a = 0; a < p.TWO_PI; a += p.TWO_PI / 3) {
+        const foot = project(legD*Math.cos(a), legH, legD*Math.sin(a), cx, cy);
+        p.stroke(80, 160, 90, 210);
+        p.strokeWeight(2.5);
+        p.line(pivPt.sx, pivPt.sy, foot.sx, foot.sy);
+        p.noStroke();
+        p.fill(60, 130, 70, 210);
+        p.ellipse(foot.sx, foot.sy, 9, 9);
+      }
+
+      // ── Cuerda segmentada ─────────────────────────────────────────────
+      const SEGS = 18;
+      for (let i = 0; i < SEGS; i++) {
+        const t0 = i / SEGS, t1 = (i+1) / SEGS;
+        const p0 = project(bx*t0, by*t0, bz*t0, cx, cy);
+        const p1 = project(bx*t1, by*t1, bz*t1, cx, cy);
+        p.stroke(100, 200, 120, 140 + 70*t0);
+        p.strokeWeight(2.5 - t0 * 1.2);
+        p.line(p0.sx, p0.sy, p1.sx, p1.sy);
+      }
+
+      // ── Pivote ───────────────────────────────────────────────────────
+      drawSphere(p, pivPt.sx, pivPt.sy, 9, 160, 220, 170);
+
+      // ── Bob principal ─────────────────────────────────────────────────
+      const bobPt = project(bx, by, bz, cx, cy);
+      const vel3  = bobBody.velocity;
+      const speed = Math.sqrt(vel3.x**2 + vel3.y**2 + vel3.z**2) * inv;
+      const cr    = Math.min(255, 20 + speed * 4);
+      const cg2   = Math.min(240, 200 - speed * 3);
+      const cb    = Math.min(255, 60 + speed * 5);
+      drawSphere(p, bobPt.sx, bobPt.sy, 22, cr, cg2, cb);
+
+      // ── Eje vertical ──────────────────────────────────────────────────
+      const axT = project(0, -55, 0, cx, cy);
+      const axB = project(0, by+60, 0, cx, cy);
+      p.stroke(40, 120, 50, 90);
+      p.strokeWeight(1);
+      p.drawingContext.setLineDash([4, 8]);
+      p.line(axT.sx, axT.sy, axB.sx, axB.sy);
+      p.drawingContext.setLineDash([]);
+
+      // ── HUD ───────────────────────────────────────────────────────────
+      const Ek = 0.5 * (vel3.x**2 + vel3.y**2 + vel3.z**2);
+      document.getElementById('velb').textContent   = speed.toFixed(1);
+      document.getElementById('energy').textContent = Ek.toFixed(3);
+      document.getElementById('radius').textContent = R.toFixed(1);
+    };
+
+    p.mousePressed  = () => { isDrag = true;  prevMX = p.mouseX; };
+    p.mouseReleased = () => { isDrag = false; };
+    p.mouseDragged  = () => {
+      camAngle -= (p.mouseX - prevMX) * 0.008;
+      prevMX = p.mouseX;
+    };
+    p.windowResized = () => p.resizeCanvas(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ── BOTONES ──────────────────────────────────────────────────────────────────
+function togglePause() { paused = !paused; }
+function toggleTrail() { showTrail = !showTrail; if (!showTrail) trail = []; }
+function addImpulse() {
+  if (!bobBody) return;
+  const f = 0.8;
+  bobBody.applyImpulse(
+    new CANNON.Vec3(
+      (Math.random()-0.5) * f,
+      (Math.random()-0.3) * f * 0.3,
+      (Math.random()-0.5) * f
+    ),
+    bobBody.position
+  );
+}
+
+// ── INICIO ───────────────────────────────────────────────────────────────────
+window.addEventListener('load', function() {
+  setTimeout(() => {
+    if (typeof CANNON === 'undefined') {
+      document.getElementById('loading').innerHTML = '❌ Error: Cannon.js no cargó<br><small>Verifica tu conexión</small>';
+      return;
+    }
+    document.getElementById('loading').style.display  = 'none';
+    document.getElementById('panel').style.display    = 'block';
+    document.getElementById('controls').style.display = 'flex';
+    startSketch();
+  }, 300);
+});
+</script>
+</body>
+</html>

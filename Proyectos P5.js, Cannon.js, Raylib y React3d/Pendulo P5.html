@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Péndulo Cónico Giratorio – p5.js</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#000; overflow:hidden; font-family:monospace; }
+    #panel {
+      position:absolute; top:10px; left:10px; z-index:10;
+      color:#0ff; font-size:12px; line-height:2;
+      background:rgba(0,0,0,0.75); padding:12px 16px;
+      border-radius:8px; min-width:240px; border:1px solid #114;
+    }
+    #panel b { color:#fff; font-size:14px; }
+    label { color:#aad; display:block; }
+    input[type=range]{ width:120px; accent-color:#0ff; vertical-align:middle; }
+    #badge {
+      position:absolute; top:10px; right:10px; z-index:10;
+      background:rgba(0,200,255,0.1); border:1px solid #0cf;
+      color:#0cf; font-size:11px; padding:6px 12px;
+      border-radius:6px; font-family:monospace;
+    }
+    #controls {
+      position:absolute; bottom:14px; left:50%;
+      transform:translateX(-50%);
+      display:flex; gap:10px; z-index:10;
+    }
+    button {
+      background:#0a0a2e; color:#0ff; border:1px solid #0ff;
+      padding:7px 18px; border-radius:4px; cursor:pointer; font-size:13px;
+    }
+    button:hover{ background:#0ff; color:#000; }
+  </style>
+</head>
+<body>
+<div id="panel">
+  <b>⭕ Péndulo Cónico – p5.js</b><br>
+  <small>Rotación circular continua</small><br><br>
+  <label>Longitud L:
+    <input type="range" id="slL" min="80" max="260" value="180"
+      oninput="vL.textContent=this.value; recalc()">
+    <span id="vL">180</span> px
+  </label>
+  <label>Ángulo cónico θ:
+    <input type="range" id="slA" min="5" max="60" value="25"
+      oninput="vA.textContent=this.value+'°'; recalc()">
+    <span id="vA">25°</span>
+  </label>
+  <label>Vel. angular ω:
+    <input type="range" id="slW" min="10" max="300" value="90"
+      oninput="vW.textContent=(this.value/100).toFixed(2)+' rad/s'">
+    <span id="vW">0.90 rad/s</span>
+  </label>
+  <label>Efecto Foucault:
+    <input type="range" id="slF" min="0" max="100" value="30"
+      oninput="vF.textContent=this.value+'%'">
+    <span id="vF">30%</span>
+  </label>
+  <label>Elevación vista:
+    <input type="range" id="slEl" min="10" max="80" value="30"
+      oninput="vEl.textContent=this.value+'°'">
+    <span id="vEl">30°</span>
+  </label>
+  <br>
+  Radio: <span id="radius">—</span> px<br>
+  T orbit: <span id="period">—</span> s<br>
+  Vel bob: <span id="velb">—</span> px/s
+</div>
+
+<div id="badge">p5.js solo</div>
+
+<div id="controls">
+  <button onclick="togglePause()">⏸ Pausa</button>
+  <button onclick="toggleTrail()">〰 Estela</button>
+  <button onclick="toggleDir()">🔄 Sentido</button>
+  <button onclick="resetTrail()">🗑 Limpiar</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script>
+// ── ESTADO ───────────────────────────────────────────────────────────────────
+let phi       = 0;        // ángulo de rotación actual en el plano horizontal
+let phiFoucault = 0;      // ángulo acumulado del efecto Foucault
+let paused    = false;
+let showTrail = true;
+let direction = 1;        // +1 o -1
+let trail     = [];
+const TRAIL_MAX = 800;
+
+// Cámara
+let camAngle = 0.5;
+let isDrag   = false;
+let prevMX   = 0;
+
+// ── SLIDERS ──────────────────────────────────────────────────────────────────
+const sl  = id => parseFloat(document.getElementById(id).value);
+const getL   = () => sl('slL');
+const getTheta = () => sl('slA') * Math.PI / 180;
+const getOmega = () => sl('slW') / 100 * direction;
+const getFoucault = () => sl('slF') / 100 * 0.003;  // velocidad de precesión
+const getElev    = () => sl('slEl') * Math.PI / 180;
+
+function recalc() {
+  const L = getL(), th = getTheta();
+  const R = L * Math.sin(th);
+  document.getElementById('radius').textContent = R.toFixed(1);
+  const T = 2 * Math.PI / Math.abs(getOmega());
+  document.getElementById('period').textContent = T.toFixed(2);
+}
+recalc();
+
+// ── PROYECCIÓN 3D → 2D ───────────────────────────────────────────────────────
+function project(x3, y3, z3, cx, cy) {
+  const elev = getElev();
+  const cosC = Math.cos(camAngle), sinC = Math.sin(camAngle);
+  const cosE = Math.cos(elev),     sinE = Math.sin(elev);
+  const rx   =  x3 * cosC - z3 * sinC;
+  const ry   =  y3;
+  const rz   =  x3 * sinC + z3 * cosC;
+  const ry2  =  ry * cosE - rz * sinE;
+  const fov  = 700;
+  const dep  = fov / (fov + rz * cosE + ry * sinE + 900);
+  return { sx: cx + rx * dep, sy: cy + ry2 * dep, dep };
+}
+
+// ── ESFERA 3D con gradiente ──────────────────────────────────────────────────
+function drawSphere(p, sx, sy, r, cr, cg, cb, alpha=255) {
+  p.noStroke();
+  // Sombra exterior
+  p.fill(cr*0.1, cg*0.1, cb*0.1, 50);
+  p.ellipse(sx + r*0.4, sy + r*0.5, r*2.4, r*0.9);
+  // Capas de gradiente (de borde oscuro a centro claro)
+  for (let i = 10; i >= 0; i--) {
+    const t  = i / 10;
+    const ri = r * (0.15 + t * 0.85);
+    const br = 0.25 + t * 0.75;
+    const ox = -r * 0.28 * t;
+    const oy = -r * 0.28 * t;
+    p.fill(
+      Math.min(255, cr * br + 220 * (1-t) * 0.3),
+      Math.min(255, cg * br + 220 * (1-t) * 0.1),
+      Math.min(255, cb * br + 220 * (1-t) * 0.05),
+      alpha
+    );
+    p.ellipse(sx + ox, sy + oy, ri*2, ri*2);
+  }
+  // Brillo especular
+  p.fill(255, 255, 255, 180);
+  p.ellipse(sx - r*0.3, sy - r*0.32, r*0.38, r*0.38);
+  p.fill(255, 255, 255, 80);
+  p.ellipse(sx - r*0.18, sy - r*0.18, r*0.18, r*0.18);
+}
+
+// ── DIBUJAR TUBO / CUERDA CILÍNDRICA ─────────────────────────────────────────
+function drawRope(p, pts, cx, cy) {
+  // pts: array de {x3,y3,z3}
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = project(pts[i].x,   pts[i].y,   pts[i].z,   cx, cy);
+    const b = project(pts[i+1].x, pts[i+1].y, pts[i+1].z, cx, cy);
+    const t = i / (pts.length - 1);
+    p.stroke(150 + 80*t, 170 + 60*t, 220, 180 + 60*t);
+    p.strokeWeight(2.5 - t * 1.2);
+    p.line(a.sx, a.sy, b.sx, b.sy);
+  }
+}
+
+// ── SKETCH ──────────────────────────────────────────────────────────────────
+new p5(function(p) {
+  p.setup = function() {
+    p.createCanvas(window.innerWidth, window.innerHeight);
+  };
+
+  p.draw = function() {
+    p.background(6, 6, 20);
+
+    const L   = getL();
+    const th  = getTheta();
+    const om  = getOmega();
+    const dt  = 0.016;
+
+    // Avanzar ángulo de rotación
+    if (!paused) {
+      phi        += om * dt;
+      phiFoucault += getFoucault() * direction;
+    }
+
+    // Posición del bob en 3D:
+    // El péndulo cónico gira en un círculo horizontal
+    // con ángulo θ respecto a la vertical (eje Y negativo)
+    const R  = L * Math.sin(th);   // radio del círculo horizontal
+    const dy = L * Math.cos(th);   // descenso vertical
+
+    // Ángulo total = rotación + precesión Foucault
+    const totalPhi = phi + phiFoucault;
+    const bx = R * Math.cos(totalPhi);
+    const bz = R * Math.sin(totalPhi);
+    const by = dy;   // hacia abajo (positivo = abajo en pantalla)
+
+    // Velocidad instantánea del bob
+    const vbx = -R * om * Math.sin(totalPhi);
+    const vbz =  R * om * Math.cos(totalPhi);
+    const speed = Math.sqrt(vbx*vbx + vbz*vbz);
+    document.getElementById('velb').textContent = speed.toFixed(1);
+    recalc();
+
+    // Guardar estela
+    if (!paused && showTrail) {
+      trail.push({ x: bx, y: by, z: bz });
+      if (trail.length > TRAIL_MAX) trail.shift();
+    }
+
+    const cx = p.width  / 2;
+    const cy = p.height / 2 - 40;
+
+    // Auto-rotación lenta de cámara
+    if (!isDrag) camAngle += 0.004;
+
+    // ── Grilla del suelo ──────────────────────────────────────────────────
+    p.stroke(22, 40, 80, 130);
+    p.strokeWeight(1);
+    const gs = 55, gn = 6;
+    for (let i = -gn; i <= gn; i++) {
+      const a = project(i*gs, by+30, -gn*gs, cx, cy);
+      const b = project(i*gs, by+30,  gn*gs, cx, cy);
+      p.line(a.sx, a.sy, b.sx, b.sy);
+      const c = project(-gn*gs, by+30, i*gs, cx, cy);
+      const d = project( gn*gs, by+30, i*gs, cx, cy);
+      p.line(c.sx, c.sy, d.sx, d.sy);
+    }
+
+    // Círculo de trayectoria en el suelo (referencia)
+    p.noFill();
+    p.stroke(40, 100, 180, 120);
+    p.strokeWeight(1.5);
+    p.drawingContext.setLineDash([5, 5]);
+    p.beginShape();
+    for (let a = 0; a <= p.TWO_PI + 0.1; a += 0.08) {
+      const pt = project(R * Math.cos(a), by+28, R * Math.sin(a), cx, cy);
+      p.vertex(pt.sx, pt.sy);
+    }
+    p.endShape();
+    p.drawingContext.setLineDash([]);
+
+    // Cono de referencia (líneas desde pivote al círculo base)
+    p.stroke(30, 60, 100, 60);
+    p.strokeWeight(1);
+    for (let a = 0; a < p.TWO_PI; a += p.PI / 4) {
+      const piv = project(0, 0, 0, cx, cy);
+      const rim = project(R * Math.cos(a), by, R * Math.sin(a), cx, cy);
+      p.line(piv.sx, piv.sy, rim.sx, rim.sy);
+    }
+
+    // ── Estela del bob ────────────────────────────────────────────────────
+    if (showTrail && trail.length > 1) {
+      for (let i = 1; i < trail.length; i++) {
+        const t0 = project(trail[i-1].x, trail[i-1].y, trail[i-1].z, cx, cy);
+        const t1 = project(trail[i  ].x, trail[i  ].y, trail[i  ].z, cx, cy);
+        const alpha = p.map(i, 0, trail.length, 0, 220);
+        const hue   = p.map(i, 0, trail.length, 0, 255);
+        p.stroke(hue, 80, 255 - hue*0.5, alpha);
+        p.strokeWeight(1.6);
+        p.line(t0.sx, t0.sy, t1.sx, t1.sy);
+      }
+    }
+
+    // ── Sombra del bob en el suelo ────────────────────────────────────────
+    const shadowPt = project(bx, by + 28, bz, cx, cy);
+    p.noStroke();
+    p.fill(60, 100, 220, 55);
+    p.ellipse(shadowPt.sx, shadowPt.sy, 30, 10);
+
+    // ── Estructura soporte (trípode) ──────────────────────────────────────
+    const pivPt = project(0, 0, 0, cx, cy);
+    const legDist = 55, legH = -30;
+    for (let a = 0; a < p.TWO_PI; a += p.TWO_PI / 3) {
+      const foot = project(legDist*Math.cos(a), legH, legDist*Math.sin(a), cx, cy);
+      p.stroke(100, 120, 180, 200);
+      p.strokeWeight(2.5);
+      p.line(pivPt.sx, pivPt.sy, foot.sx, foot.sy);
+      // Pie (pequeño círculo)
+      p.noStroke();
+      p.fill(80, 100, 160, 200);
+      p.ellipse(foot.sx, foot.sy, 8, 8);
+    }
+
+    // ── Cuerda (segmentada) ───────────────────────────────────────────────
+    const SEGS = 16;
+    const ropePoints = [];
+    for (let i = 0; i <= SEGS; i++) {
+      const t = i / SEGS;
+      ropePoints.push({ x: bx * t, y: by * t, z: bz * t });
+    }
+    drawRope(p, ropePoints, cx, cy);
+
+    // ── Pivote (esfera pequeña plateada) ──────────────────────────────────
+    drawSphere(p, pivPt.sx, pivPt.sy, 9, 180, 200, 240);
+
+    // ── Bob principal (esfera grande) ─────────────────────────────────────
+    const bobPt = project(bx, by, bz, cx, cy);
+    // Color según velocidad y dirección
+    const cr = direction > 0
+      ? Math.min(255, 50 + speed * 6)
+      : Math.min(255, 30 + speed * 4);
+    const cg = Math.min(200, 80 + speed * 3);
+    const cb = direction > 0
+      ? Math.min(255, 180 + speed * 2)
+      : Math.min(255, 50 + speed * 8);
+    drawSphere(p, bobPt.sx, bobPt.sy, 22, cr, cg, cb);
+
+    // ── Eje vertical (línea punteada) ─────────────────────────────────────
+    const axTop = project(0, -50, 0, cx, cy);
+    const axBot = project(0, by + 60, 0, cx, cy);
+    p.stroke(60, 80, 160, 90);
+    p.strokeWeight(1);
+    p.drawingContext.setLineDash([4, 8]);
+    p.line(axTop.sx, axTop.sy, axBot.sx, axBot.sy);
+    p.drawingContext.setLineDash([]);
+  };
+
+  // Drag de mouse para rotar cámara
+  p.mousePressed  = () => { isDrag = true;  prevMX = p.mouseX; };
+  p.mouseReleased = () => { isDrag = false; };
+  p.mouseDragged  = () => {
+    camAngle -= (p.mouseX - prevMX) * 0.008;
+    prevMX = p.mouseX;
+  };
+  p.windowResized = () => p.resizeCanvas(window.innerWidth, window.innerHeight);
+});
+
+// ── BOTONES ──────────────────────────────────────────────────────────────────
+function togglePause() { paused = !paused; }
+function toggleTrail() { showTrail = !showTrail; if (!showTrail) trail = []; }
+function toggleDir()   { direction *= -1; }
+function resetTrail()  { trail = []; phi = 0; phiFoucault = 0; }
+</script>
+</body>
+</html>

@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Torque 3D — Solo p5.js | Cap. 13</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+
+<style>
+:root {
+  --bg:      #060810;
+  --panel:   #0c0f1a;
+  --border:  #161d30;
+  --accent:  #e8ff47;
+  --accent2: #47c8ff;
+  --accent3: #ff6b47;
+  --text:    #a8b8d0;
+  --dim:     #3a4560;
+  --mono:    'Share Tech Mono', monospace;
+  --display: 'Rajdhani', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--mono); }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 20px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; flex-wrap: wrap; gap: 8px;
+}
+header h1 { font-family: var(--display); font-size: 1.3rem; font-weight: 700; color: #fff; letter-spacing: .05em; }
+header h1 span { color: var(--accent); }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.badge {
+  border: 1px solid var(--accent); color: var(--accent);
+  font-size: 9px; padding: 2px 8px; border-radius: 2px; letter-spacing: .1em;
+}
+.header-right { font-size: 10px; color: var(--dim); text-align: right; line-height: 1.6; }
+
+.tab-nav { display: flex; border-bottom: 1px solid var(--border); padding: 0 20px; flex-shrink: 0; overflow-x: auto; }
+.tab-btn {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--dim); font-family: var(--mono); font-size: 11px;
+  padding: 9px 16px; cursor: pointer; white-space: nowrap; transition: all .2s; letter-spacing: .05em;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 2px; background: var(--border); font-size: 9px; margin-right: 7px;
+}
+.tab-btn.active .tab-num { background: var(--accent); color: #000; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+
+#viewport { flex: 1; position: relative; overflow: hidden; cursor: grab; }
+#viewport:active { cursor: grabbing; }
+#viewport canvas { display: block; }
+.vp-label { position: absolute; top: 10px; left: 12px; font-size: 9px; color: var(--dim); letter-spacing: .1em; pointer-events: none; }
+.hint { position: absolute; bottom: 10px; left: 12px; font-size: 9px; color: var(--dim); pointer-events: none; }
+
+#sidebar { width: 255px; flex-shrink: 0; border-left: 1px solid var(--border); overflow-y: auto; }
+.card { border-bottom: 1px solid var(--border); padding: 11px 13px; }
+.card h3 { font-family: var(--display); font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 7px; }
+.card p { font-size: 10px; color: var(--dim); line-height: 1.7; }
+.formula { background: #080b12; border-left: 2px solid var(--accent); padding: 6px 10px; font-size: 10px; color: var(--accent2); margin: 7px 0; border-radius: 0 3px 3px 0; line-height: 2; }
+.ctrl-item { margin-bottom: 8px; }
+.ctrl-item label { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); margin-bottom: 3px; }
+.ctrl-item label span { color: var(--accent); }
+input[type=range] { width: 100%; accent-color: var(--accent); height: 3px; cursor: pointer; }
+select { width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 5px 8px; font-family: var(--mono); font-size: 10px; border-radius: 3px; margin-top: 3px; }
+.btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); font-family: var(--mono); font-size: 10px; padding: 5px 12px; border-radius: 3px; cursor: pointer; transition: all .15s; }
+.btn:hover { background: var(--accent); color: #000; }
+.data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.di { background: #080b12; border-radius: 3px; padding: 5px 8px; }
+.di .lb { font-size: 8px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+.di .vl { font-size: 12px; color: #fff; font-weight: 600; }
+.page-ref { font-size: 9px; color: var(--dim); border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+<header>
+  <div>
+    <h1>Torque <span>&amp;</span> Dinámica 3D</h1>
+    <div class="badges" style="margin-top:4px;">
+      <span class="badge">p5.js WEBGL</span>
+      <span class="badge" style="border-color:var(--dim);color:var(--dim);">Cap. 13 · pp.336–355</span>
+    </div>
+  </div>
+  <div class="header-right">Universidad Cuauhtémoc · Métodos Numéricos<br>Víctor · Jesús · Diego · Mario</div>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab(0)"><span class="tab-num">1</span>Torque — Cubo 3D</button>
+  <button class="tab-btn"        onclick="switchTab(1)"><span class="tab-num">2</span>Turbinas 3D</button>
+  <button class="tab-btn"        onclick="switchTab(2)"><span class="tab-num">3</span>Rodadura 3D</button>
+</nav>
+
+<div class="main">
+  <div id="viewport">
+    <span class="vp-label" id="vp-label">SIM_01 · TORQUE_CUBE · p5.js WEBGL</span>
+    <span class="hint">🖱️ Arrastrar = rotar · Scroll = zoom</span>
+    <div id="p5canvas"></div>
+  </div>
+
+  <div id="sidebar">
+
+    <!-- Info cards -->
+    <div class="card" id="ci0">
+      <h3>Segunda Ley Rotacional 3D</h3>
+      <p>Cubo rígido en WEBGL. Torque sobre ejes X,Y,Z produce rotación en 3 dimensiones.</p>
+      <div class="formula">τ = I · α<br>α = τ / I<br>ω += α · dt<br>θ += ω · dt</div>
+      <div class="page-ref">📖 pp. 345–347</div>
+    </div>
+    <div class="card" id="ci1" style="display:none">
+      <h3>Turbinas 3D</h3>
+      <p>Tres turbinas con diferente I. Clic sostenido = torque activo.</p>
+      <div class="formula">α = τ / I<br>ω_term = τ / k</div>
+      <div class="page-ref">📖 pp. 347–349</div>
+    </div>
+    <div class="card" id="ci2" style="display:none">
+      <h3>Rodadura sin Deslizar 3D</h3>
+      <p>Física analítica del libro implementada en p5.js WEBGL puro. Bola en plano inclinado 3D.</p>
+      <div class="formula">f = mg·sin(θ)/(1+mr²/I)<br>v = r · ω<br>a = r · α</div>
+      <div class="page-ref">📖 pp. 350–354</div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card" id="cc0">
+      <h3>Controles</h3>
+      <div class="ctrl-item"><label>Torque (τ) <span id="tv0">1.0</span></label>
+        <input type="range" id="tq0" min="0" max="5" step="0.1" value="1" oninput="document.getElementById('tv0').innerText=parseFloat(this.value).toFixed(1)"></div>
+      <div class="ctrl-item"><label>Inercia (I) <span id="iv0">5.0</span></label>
+        <input type="range" id="im0" min="1" max="20" step="0.5" value="5" oninput="document.getElementById('iv0').innerText=parseFloat(this.value).toFixed(1)"></div>
+      <div class="ctrl-item"><label>Amort. (k) <span id="kv0">0.50</span></label>
+        <input type="range" id="ka0" min="0.05" max="2" step="0.05" value="0.5" oninput="document.getElementById('kv0').innerText=parseFloat(this.value).toFixed(2)"></div>
+      <div class="ctrl-item"><label>Eje de torque</label>
+        <select id="ax0"><option value="z">Eje Z</option><option value="y">Eje Y</option><option value="x">Eje X</option><option value="xyz">Todos (XYZ)</option></select></div>
+      <div class="btn-row"><button class="btn" onclick="rst0()">↺ Reset</button></div>
+    </div>
+
+    <div class="card" id="cc1" style="display:none">
+      <h3>Controles</h3>
+      <div class="ctrl-item"><label>τ_max <span id="tv1">2.0</span></label>
+        <input type="range" id="tq1" min="0.5" max="8" step="0.5" value="2" oninput="document.getElementById('tv1').innerText=parseFloat(this.value).toFixed(1)"></div>
+      <div class="ctrl-item"><label>Amort. (k) <span id="kv1">0.50</span></label>
+        <input type="range" id="ka1" min="0.05" max="2" step="0.05" value="0.5" oninput="document.getElementById('kv1').innerText=parseFloat(this.value).toFixed(2)"></div>
+      <p style="font-size:10px;color:var(--dim);margin-top:6px;">🖱️ Clic sostenido en viewport = torque</p>
+    </div>
+
+    <div class="card" id="cc2" style="display:none">
+      <h3>Controles</h3>
+      <div class="ctrl-item"><label>Ángulo θ (°) <span id="av2">20</span></label>
+        <input type="range" id="ang2" min="5" max="55" step="1" value="20" oninput="document.getElementById('av2').innerText=this.value; rst2()"></div>
+      <div class="ctrl-item"><label>Tipo esfera</label>
+        <select id="sp2" onchange="rst2()">
+          <option value="0.4">Sólida — I=2/5·mr²</option>
+          <option value="0.667">Hueca — I=2/3·mr²</option>
+          <option value="0.5">Cilindro — I=1/2·mr²</option>
+        </select></div>
+      <div class="btn-row"><button class="btn" onclick="rst2()">↺ Reset</button></div>
+    </div>
+
+    <!-- Data -->
+    <div class="card" id="cd0">
+      <h3>Datos</h3>
+      <div class="data-grid">
+        <div class="di"><div class="lb">τ neto</div><div class="vl" id="d0t">—</div></div>
+        <div class="di"><div class="lb">α</div><div class="vl" id="d0a">—</div></div>
+        <div class="di"><div class="lb">ω</div><div class="vl" id="d0w">—</div></div>
+        <div class="di"><div class="lb">ω term.</div><div class="vl" id="d0wt">—</div></div>
+      </div>
+    </div>
+    <div class="card" id="cd1" style="display:none">
+      <h3>Estado Turbinas</h3>
+      <div id="td1" style="font-size:10px;line-height:2.2;color:var(--dim);">—</div>
+    </div>
+    <div class="card" id="cd2" style="display:none">
+      <h3>Datos</h3>
+      <div class="data-grid">
+        <div class="di"><div class="lb">v lineal</div><div class="vl" id="d2v">—</div></div>
+        <div class="di"><div class="lb">ω angular</div><div class="vl" id="d2w">—</div></div>
+        <div class="di"><div class="lb">fricción f</div><div class="vl" id="d2f">—</div></div>
+        <div class="di"><div class="lb">aceleración</div><div class="vl" id="d2a">—</div></div>
+      </div>
+      <div id="d2s" style="font-size:10px;margin-top:6px;color:var(--accent);">—</div>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// ─── Estado global ────────────────────────────────────────
+var currentTab = 0;
+var pressing   = false;
+
+// ─── Tab switch ───────────────────────────────────────────
+function switchTab(n) {
+  currentTab = n;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i===n));
+  ['ci','cc','cd'].forEach(function(p) {
+    [0,1,2].forEach(function(i) {
+      var el = document.getElementById(p+i);
+      if(el) el.style.display = (i===n) ? '' : 'none';
+    });
+  });
+  var labels = ['SIM_01 · TORQUE_CUBE · p5.js WEBGL','SIM_02 · TURBINAS_3D · p5.js WEBGL','SIM_03 · RODADURA_3D · p5.js WEBGL'];
+  document.getElementById('vp-label').innerText = labels[n];
+}
+
+// ─── p5.js sketch único en modo WEBGL ────────────────────
+new p5(function(p) {
+
+  // ── Cámara orbital ──────────────────────────────────────
+  var camTheta = 0.6, camPhi = 0.4, camR = 420;
+  var dragging = false, lastMX = 0, lastMY = 0;
+
+  // ── Estado Sim 0 — Cubo ─────────────────────────────────
+  var s0 = { rx:0, ry:0, rz:0, wx:0, wy:0, wz:0 };
+
+  // ── Estado Sim 1 — Turbinas ─────────────────────────────
+  var turbines = [
+    { angVelo:0, angle:0, I:1,  r:50,  bladeLen:55,  col:[71,200,255],  cx:-160, cy:0 },
+    { angVelo:0, angle:0, I:5,  r:70,  bladeLen:90,  col:[232,255,71],  cx:0,    cy:0 },
+    { angVelo:0, angle:0, I:81, r:100, bladeLen:150, col:[255,107,71],  cx:170,  cy:0 }
+  ];
+
+  // ── Estado Sim 2 — Rodadura ─────────────────────────────
+  var ball = { x:0, y:0, z:0, vx:0, vy:0, vz:0, angX:0, angZ:0, wX:0, wZ:0 };
+  var ballR = 28, m=1, g=6;
+  var running = true;
+
+  function rst0() { s0.rx=0;s0.ry=0;s0.rz=0;s0.wx=0;s0.wy=0;s0.wz=0; }
+  window.rst0 = rst0;
+  window.rst2 = function() { initBall(); };
+
+  function initBall() {
+    var ang = parseFloat(document.getElementById('ang2').value)*Math.PI/180;
+    ball.x  = -Math.cos(ang)*200;
+    ball.y  =  Math.sin(ang)*200 + ballR + 5;
+    ball.z  = 0;
+    ball.vx = 0; ball.vy = 0; ball.vz = 0;
+    ball.angX = 0; ball.angZ = 0; ball.wX = 0; ball.wZ = 0;
+    running = true;
+  }
+
+  p.setup = function() {
+    var vp = document.getElementById('p5canvas');
+    var W  = document.getElementById('viewport').clientWidth;
+    var H  = document.getElementById('viewport').clientHeight;
+    var cnv = p.createCanvas(W, H, p.WEBGL);
+    cnv.parent('p5canvas');
+
+    // Mouse orbital
+    cnv.mousePressed(function()  { dragging=true;  pressing=true; lastMX=p.mouseX; lastMY=p.mouseY; });
+    cnv.mouseReleased(function() { dragging=false; pressing=false; });
+    document.addEventListener('mousemove', function(e) {
+      if(!dragging) return;
+      camTheta -= (p.mouseX-lastMX)*0.007;
+      camPhi   -= (p.mouseY-lastMY)*0.007;
+      camPhi = p.constrain(camPhi, -1.4, 1.4);
+      lastMX=p.mouseX; lastMY=p.mouseY;
+    });
+    document.addEventListener('wheel', function(e) {
+      camR = p.constrain(camR + e.deltaY*0.4, 120, 900);
+    });
+
+    p.frameRate(60);
+    initBall();
+  };
+
+  p.windowResized = function() {
+    var W = document.getElementById('viewport').clientWidth;
+    var H = document.getElementById('viewport').clientHeight;
+    p.resizeCanvas(W, H);
+  };
+
+  // ── DRAW ────────────────────────────────────────────────
+  p.draw = function() {
+    p.background(6, 8, 16);
+
+    // Cámara orbital
+    var cx = camR * Math.cos(camPhi) * Math.sin(camTheta);
+    var cy = camR * Math.sin(camPhi);
+    var cz = camR * Math.cos(camPhi) * Math.cos(camTheta);
+    p.camera(cx,cy,cz, 0,0,0, 0,1,0);
+
+    // Luz
+    p.ambientLight(40, 50, 70);
+    p.directionalLight(200,220,255, 0.5,1,-0.8);
+    p.pointLight(0,255,224, -200,300,-200);
+
+    // Grilla de piso
+    p.push();
+    p.translate(0, 100, 0);
+    p.stroke(22,32,60); p.strokeWeight(1); p.noFill();
+    var G=8, step=60;
+    for(var i=-G;i<=G;i++){
+      p.line(i*step,-1,-G*step, i*step,-1,G*step);
+      p.line(-G*step,-1,i*step, G*step,-1,i*step);
+    }
+    p.pop();
+
+    if(currentTab===0)      drawSim0();
+    else if(currentTab===1) drawSim1();
+    else                    drawSim2();
+  };
+
+  // ══════════════════════════════════════════════════════
+  // SIM 0 — Cubo 3D con Torque   pp.345-347
+  // ══════════════════════════════════════════════════════
+  function drawSim0() {
+    var tq = parseFloat(document.getElementById('tq0').value);
+    var im = parseFloat(document.getElementById('im0').value);
+    var k  = parseFloat(document.getElementById('ka0').value);
+    var ax = document.getElementById('ax0').value;
+    var dt = 0.016;
+
+    var tz=0,ty=0,tx=0;
+    if(ax==='z'||ax==='xyz') tz = tq - k*s0.wz;
+    if(ax==='y'||ax==='xyz') ty = (ax==='xyz'?tq*0.7:tq) - k*s0.wy;
+    if(ax==='x'||ax==='xyz') tx = (ax==='xyz'?tq*0.5:tq) - k*s0.wx;
+    if(ax==='z'){ tx=-k*s0.wx; ty=-k*s0.wy; }
+    if(ax==='y'){ tx=-k*s0.wx; tz=-k*s0.wz; }
+    if(ax==='x'){ ty=-k*s0.wy; tz=-k*s0.wz; }
+
+    s0.wx += (tx/im)*dt; s0.wy += (ty/im)*dt; s0.wz += (tz/im)*dt;
+    s0.rx += s0.wx*dt;   s0.ry += s0.wy*dt;   s0.rz += s0.wz*dt;
+
+    p.push();
+    p.rotateX(s0.rx); p.rotateY(s0.ry); p.rotateZ(s0.rz);
+
+    // Cubo sólido
+    p.fill(0,40,60,200); p.stroke(0,255,224,180); p.strokeWeight(1.5);
+    p.box(140);
+
+    // Ejes del cubo
+    p.strokeWeight(3);
+    p.stroke(255,60,60);   p.line(0,0,0, 100,0,0);   // X rojo
+    p.stroke(60,255,60);   p.line(0,0,0, 0,-100,0);  // Y verde
+    p.stroke(60,60,255);   p.line(0,0,0, 0,0,100);   // Z azul
+
+    // Vértices
+    p.noStroke(); p.fill(0,255,224);
+    [[-70,-70,-70],[70,-70,-70],[70,70,-70],[-70,70,-70],
+     [-70,-70, 70],[70,-70, 70],[70,70, 70],[-70,70, 70]].forEach(function(v){
+      p.push(); p.translate(v[0],v[1],v[2]); p.sphere(6); p.pop();
+    });
+    // Centro
+    p.fill(255,100,60); p.sphere(10);
+    p.pop();
+
+    // Ejes del mundo
+    p.strokeWeight(2);
+    p.stroke(255,60,60,100);   p.line(0,0,0, 180,0,0);
+    p.stroke(60,255,60,100);   p.line(0,0,0, 0,-180,0);
+    p.stroke(60,60,255,100);   p.line(0,0,0, 0,0,180);
+
+    var omega=Math.sqrt(s0.wx**2+s0.wy**2+s0.wz**2);
+    document.getElementById('d0t').innerText  = tz.toFixed(3);
+    document.getElementById('d0a').innerText  = (tz/im).toFixed(4);
+    document.getElementById('d0w').innerText  = omega.toFixed(3);
+    document.getElementById('d0wt').innerText = k>0?(tq/k).toFixed(3):'∞';
+  }
+
+  // ══════════════════════════════════════════════════════
+  // SIM 1 — Turbinas 3D   pp.347-349
+  // ══════════════════════════════════════════════════════
+  function drawSim1() {
+    var tqMax = parseFloat(document.getElementById('tq1').value);
+    var k     = parseFloat(document.getElementById('ka1').value);
+    var tq    = pressing ? tqMax : 0;
+    var dt    = 0.016;
+    var names = ['PEQUEÑA','MEDIANA','GRANDE'], html='';
+
+    turbines.forEach(function(t, idx) {
+      // Física: T = Iα  →  α = T/I
+      var torque = tq - k*t.angVelo;
+      t.angVelo += (torque/t.I)*dt;
+      t.angle   += t.angVelo*dt;
+
+      p.push();
+      p.translate(t.cx, -60, 0);
+
+      // Poste
+      p.fill(20,40,70); p.stroke(40,80,120); p.strokeWeight(1);
+      p.push(); p.translate(0,80,0); p.cylinder(6,160); p.pop();
+
+      // Hub
+      p.fill(t.col[0],t.col[1],t.col[2]);
+      p.noStroke();
+      p.push(); p.translate(0,-10,0); p.sphere(t.r*0.22); p.pop();
+
+      // 3 Paletas rotando
+      p.push();
+      p.translate(0,-10,0);
+      p.rotateZ(t.angle);
+      for(var i=0;i<3;i++){
+        p.push();
+        p.rotateZ((i/3)*p.TWO_PI);
+        p.translate(t.bladeLen/2, 0, 0);
+        p.fill(t.col[0],t.col[1],t.col[2], 200);
+        p.stroke(t.col[0],t.col[1],t.col[2]);
+        p.strokeWeight(0.5);
+        p.box(t.bladeLen, 8, t.r*0.18);
+        p.pop();
+      }
+      p.pop();
+
+      p.pop();
+      html += '<span style="color:rgb('+t.col+')">'+names[idx]+'</span>: I='+t.I+' ω='+t.angVelo.toFixed(3)+'<br>';
+    });
+    document.getElementById('td1').innerHTML = html;
+  }
+
+  // ══════════════════════════════════════════════════════
+  // SIM 2 — Rodadura 3D sin Deslizar  pp.350-354
+  // Física analítica del libro, visualización WEBGL
+  // ══════════════════════════════════════════════════════
+  function drawSim2() {
+    var angDeg  = parseFloat(document.getElementById('ang2').value);
+    var ang     = angDeg * Math.PI / 180;
+    var iFactor = parseFloat(document.getElementById('sp2').value);
+    var dt      = 0.016;
+
+    // ── Física analítica del libro pp.353 ────────────────
+    var friction = m*g*Math.sin(ang)/(1+1/iFactor);  // f = mg·sin(θ)/(1+mr²/I)
+    var accel    = g*Math.sin(ang)/(1+iFactor);       // a = g·sin(θ)/(1+I/mr²)
+    var angAcc   = accel/ballR;                        // α = a/r
+
+    if(running) {
+      ball.vx  += accel*Math.cos(ang)*dt;
+      ball.vy  += accel*Math.sin(ang)*dt;
+      ball.wZ  += angAcc*dt;
+      ball.x   += ball.vx*dt*60;
+      ball.y   += ball.vy*dt*60;
+      ball.angZ+= ball.wZ*dt;
+
+      if(ball.x > 230 || ball.y > 220) running=false;
+    }
+
+    // ── Dibujar plano inclinado ──────────────────────────
+    p.push();
+    p.rotateZ(-ang);
+    p.fill(10,30,60,200); p.stroke(71,200,255,150); p.strokeWeight(1.5);
+    p.box(460,14,180);
+    // Bordes del plano
+    p.stroke(71,200,255,80); p.strokeWeight(1);
+    for(var i=-3;i<=3;i++){
+      p.line(i*60,-8,-90, i*60,-8,90);
+    }
+    p.pop();
+
+    // ── Suelo de referencia ──────────────────────────────
+    p.push();
+    p.translate(0,95,0);
+    p.fill(8,14,26,180); p.stroke(20,35,60); p.strokeWeight(1);
+    p.box(600,6,200);
+    p.pop();
+
+    // ── Bola ─────────────────────────────────────────────
+    p.push();
+    p.translate(ball.x, -ball.y, ball.z);
+    p.rotateZ(-ball.angZ);
+
+    // Sombra
+    p.push(); p.translate(0,0,ballR+4);
+    p.noStroke(); p.fill(0,0,0,60); p.ellipse(0,0,ballR*1.8,ballR*0.5);
+    p.pop();
+
+    // Cuerpo
+    p.fill(232,200,40, 230);
+    p.stroke(255,220,80,180); p.strokeWeight(1);
+    p.sphere(ballR);
+
+    // Meridianos para ver rotación
+    p.noFill(); p.stroke(255,140,0,120); p.strokeWeight(1.5);
+    for(var a=0;a<4;a++){
+      p.push(); p.rotateY((a/4)*p.TWO_PI);
+      p.beginShape(); p.noFill();
+      for(var t=0;t<=20;t++){
+        var phi = p.map(t,0,20,-p.HALF_PI,p.HALF_PI);
+        p.vertex(ballR*Math.cos(phi), ballR*Math.sin(phi),0);
+      }
+      p.endShape();
+      p.pop();
+    }
+    // Ecuador
+    p.push(); p.rotateX(p.HALF_PI);
+    p.beginShape(); p.noFill();
+    for(var t=0;t<=20;t++){
+      var th = p.map(t,0,20,0,p.TWO_PI);
+      p.vertex(ballR*Math.cos(th),ballR*Math.sin(th),0);
+    }
+    p.endShape(p.CLOSE);
+    p.pop();
+    p.pop();
+
+    // ── Vector velocidad ─────────────────────────────────
+    if(running && (Math.abs(ball.vx)+Math.abs(ball.vy))>0.01) {
+      var spd = Math.sqrt(ball.vx**2+ball.vy**2);
+      var vsx = ball.vx/spd, vsy = -ball.vy/spd;
+      p.push();
+      p.translate(ball.x,  -ball.y, 0);
+      p.stroke(255,60,60,200); p.strokeWeight(3);
+      p.line(0,0,0, vsx*spd*8, vsy*spd*8, 0);
+      p.pop();
+    }
+
+    var speed = Math.sqrt(ball.vx**2+ball.vy**2);
+    var rw    = (ballR/60)*ball.wZ;
+    document.getElementById('d2v').innerText = speed.toFixed(3);
+    document.getElementById('d2w').innerText = ball.wZ.toFixed(3);
+    document.getElementById('d2f').innerText = friction.toFixed(3);
+    document.getElementById('d2a').innerText = accel.toFixed(3);
+    document.getElementById('d2s').innerText = running
+      ? (Math.abs(speed/60-rw)<0.05 ? '✅ Rodadura pura: v ≈ r·ω' : '🔄 acelerando...')
+      : '🏁 Completado';
+  }
+
+}, 'p5canvas');
+
+// Iniciar tab
+switchTab(0);
+</script>
+</body>
+</html>

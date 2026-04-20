@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Rodadura Sin Deslizar - React + Three.js (React3D)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #080b10; font-family: 'Segoe UI', monospace; overflow: hidden; height: 100vh; }
+  #root { width: 100vw; height: 100vh; display: flex; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React + Three.js (React3D equivalent) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ============================================================
+//  RODADURA SIN DESLIZAR - React + Three.js (React3D)
+//  Fisica: Physics for JS Games - Cap. 13
+// ============================================================
+
+const G = 9.8;
+const RAMP_LEN = 12;
+
+// Momento de inercia
+function getK(type) {
+  if (type === 'sphere')   return 2/5;
+  if (type === 'cylinder') return 1/2;
+  if (type === 'disk')     return 1/2;
+  return 2/5;
+}
+
+function getAccel(angle, type) {
+  const t = angle * Math.PI / 180;
+  return G * Math.sin(t) / (1 + getK(type));
+}
+
+function getFriction(angle, mass, type) {
+  const t = angle * Math.PI / 180;
+  const k = getK(type);
+  return mass * G * Math.sin(t) / (1 + 1/k);
+}
+
+function slopeToWorld(s, theta, radius) {
+  const startX = -RAMP_LEN * Math.cos(theta);
+  const startY =  RAMP_LEN * Math.sin(theta);
+  return new THREE.Vector3(
+    startX + s * Math.cos(theta),
+    startY - s * Math.sin(theta) + radius,
+    0
+  );
+}
+
+// ---- Componente Three.js Canvas ----
+function ThreeCanvas({ params, state, showVectors }) {
+  const mountRef = useRef(null);
+  const sceneRef = useRef(null);
+  const ballRef  = useRef(null);
+  const arrowsRef = useRef({});
+  const rendRef  = useRef(null);
+  const camRef   = useRef(null);
+  const camAngle = useRef(0);
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    const w = mountRef.current.clientWidth;
+    const h = mountRef.current.clientHeight;
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    mountRef.current.appendChild(renderer.domElement);
+    rendRef.current = renderer;
+
+    // Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080b10);
+    scene.fog = new THREE.FogExp2(0x080b10, 0.02);
+    sceneRef.current = scene;
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 200);
+    camera.position.set(8, 6, 12);
+    camera.lookAt(0, 2, 0);
+    camRef.current = camera;
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0x334455, 2));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+    dir.position.set(10, 20, 10);
+    dir.castShadow = true;
+    scene.add(dir);
+    const fill = new THREE.PointLight(0x00aaff, 0.5, 30);
+    fill.position.set(-5, 8, 5);
+    scene.add(fill);
+
+    // Grid
+    scene.add(new THREE.GridHelper(40, 40, 0x1a2030, 0x0d1018));
+
+    // Ramp
+    buildRamp(scene, params.angle);
+
+    // Ball
+    buildBall(scene, params);
+
+    // Arrows
+    buildArrows(scene);
+
+    // Resize
+    const onResize = () => {
+      const w2 = mountRef.current?.clientWidth || w;
+      const h2 = mountRef.current?.clientHeight || h;
+      renderer.setSize(w2, h2);
+      camera.aspect = w2 / h2;
+      camera.updateProjectionMatrix();
+    };
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      window.removeEventListener('resize', onResize);
+      cancelAnimationFrame(frameRef.current);
+      renderer.dispose();
+      if (mountRef.current) mountRef.current.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  function buildRamp(scene, angleDeg) {
+    // Remove old ramp
+    const old = scene.getObjectByName('ramp');
+    if (old) scene.remove(old);
+
+    const theta = angleDeg * Math.PI / 180;
+    const group = new THREE.Group();
+    group.name = 'ramp';
+
+    const hw = 2;
+    const p0 = new THREE.Vector3(-RAMP_LEN * Math.cos(theta), RAMP_LEN * Math.sin(theta), -hw);
+    const p1 = new THREE.Vector3(0, 0, -hw);
+    const p2 = new THREE.Vector3(0, 0,  hw);
+    const p3 = new THREE.Vector3(-RAMP_LEN * Math.cos(theta), RAMP_LEN * Math.sin(theta),  hw);
+
+    const geo = new THREE.BufferGeometry();
+    const verts = new Float32Array([
+      p0.x,p0.y,p0.z, p1.x,p1.y,p1.z, p2.x,p2.y,p2.z,
+      p0.x,p0.y,p0.z, p2.x,p2.y,p2.z, p3.x,p3.y,p3.z,
+      p2.x,p2.y,p2.z, p1.x,p1.y,p1.z, p0.x,p0.y,p0.z,
+      p3.x,p3.y,p3.z, p2.x,p2.y,p2.z, p0.x,p0.y,p0.z,
+    ]);
+    geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x1a3050, side: THREE.DoubleSide, roughness: 0.9 });
+    group.add(new THREE.Mesh(geo, mat));
+
+    // Edges
+    const edgePts = [p0, p1, p2, p3, p0];
+    const edgeGeo = new THREE.BufferGeometry().setFromPoints(edgePts);
+    group.add(new THREE.Line(edgeGeo, new THREE.LineBasicMaterial({ color: 0x00aaff })));
+    const edgePts2 = [p1, p2];
+    const edgeGeo2 = new THREE.BufferGeometry().setFromPoints(edgePts2);
+    group.add(new THREE.Line(edgeGeo2, new THREE.LineBasicMaterial({ color: 0x00aaff })));
+
+    scene.add(group);
+  }
+
+  function buildBall(scene, p) {
+    const old = scene.getObjectByName('ball');
+    if (old) scene.remove(old);
+
+    const r = p.radius;
+    let mesh;
+    if (p.type === 'sphere') {
+      mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 32, 32),
+        new THREE.MeshStandardMaterial({ color: 0x00ccff, roughness: 0.3, metalness: 0.5, emissive: 0x002233 })
+      );
+      // Lines
+      for (let i = 0; i < 6; i++) {
+        const tg = new THREE.TorusGeometry(r + 0.01, 0.015, 8, 32);
+        const tm = new THREE.MeshBasicMaterial({ color: 0x005588 });
+        const t = new THREE.Mesh(tg, tm);
+        t.rotation.z = (i / 6) * Math.PI;
+        mesh.add(t);
+      }
+    } else if (p.type === 'cylinder') {
+      mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(r, r, r * 3, 24),
+        new THREE.MeshStandardMaterial({ color: 0xff7730, roughness: 0.4, metalness: 0.4 })
+      );
+      mesh.rotation.z = Math.PI / 2;
+    } else {
+      mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(r, r, r * 0.4, 32),
+        new THREE.MeshStandardMaterial({ color: 0x88ff22, roughness: 0.4, metalness: 0.3 })
+      );
+      mesh.rotation.z = Math.PI / 2;
+    }
+
+    // Red stripe
+    const sg = new THREE.TorusGeometry(r * 0.5, r * 0.08, 8, 24);
+    const sm = new THREE.MeshBasicMaterial({ color: 0xff2244 });
+    const stripe = new THREE.Mesh(sg, sm);
+    stripe.rotation.y = Math.PI / 2;
+    mesh.add(stripe);
+
+    mesh.castShadow = true;
+    mesh.name = 'ball';
+    scene.add(mesh);
+    ballRef.current = mesh;
+  }
+
+  function makeArrow(color) {
+    const g = new THREE.Group();
+    const lineGeo = new THREE.CylinderGeometry(0.04, 0.04, 1, 8);
+    const mat = new THREE.MeshBasicMaterial({ color });
+    const line = new THREE.Mesh(lineGeo, mat);
+    const coneGeo = new THREE.ConeGeometry(0.1, 0.3, 8);
+    const cone = new THREE.Mesh(coneGeo, mat);
+    cone.position.y = 0.65;
+    g.add(line); g.add(cone);
+    return g;
+  }
+
+  function buildArrows(scene) {
+    const grav = makeArrow(0xff2244); grav.name = 'arrowGrav'; scene.add(grav);
+    const norm = makeArrow(0x22dd44); norm.name = 'arrowNorm'; scene.add(norm);
+    const fric = makeArrow(0xffdd00); fric.name = 'arrowFric'; scene.add(fric);
+    arrowsRef.current = { grav, norm, fric };
+  }
+
+  // Update scene when state/params change
+  useEffect(() => {
+    if (!sceneRef.current) return;
+    const scene = sceneRef.current;
+
+    buildRamp(scene, params.angle);
+    buildBall(scene, params);
+    buildArrows(scene);
+  }, [params.type, params.radius]);
+
+  useEffect(() => {
+    if (!sceneRef.current) return;
+    buildRamp(sceneRef.current, params.angle);
+  }, [params.angle]);
+
+  // Animation loop
+  useEffect(() => {
+    if (!rendRef.current || !sceneRef.current || !camRef.current) return;
+
+    let animId;
+    const animate = () => {
+      animId = requestAnimationFrame(animate);
+
+      const theta = params.angle * Math.PI / 180;
+      const ball = ballRef.current;
+      if (ball) {
+        const wp = slopeToWorld(state.x, theta, params.radius);
+        ball.position.copy(wp);
+        if (params.type === 'sphere') {
+          ball.rotation.z = -state.angleRot;
+        } else {
+          ball.rotation.x = state.angleRot;
+        }
+      }
+
+      // Update arrows
+      const { grav, norm, fric } = arrowsRef.current;
+      if (grav && norm && fric) {
+        const wp = slopeToWorld(state.x, theta, params.radius);
+        const m = params.mass;
+        const f = getFriction(params.angle, params.mass, params.type);
+        const sc = 0.4;
+
+        grav.visible = norm.visible = fric.visible = showVectors;
+        if (showVectors) {
+          grav.position.set(wp.x, wp.y, 0.5);
+          grav.scale.y = m * G * sc * 0.05;
+          grav.rotation.z = Math.PI;
+
+          norm.position.set(wp.x, wp.y, 0.5);
+          norm.scale.y = m * G * Math.cos(theta) * sc * 0.05;
+          norm.rotation.z = -(Math.PI/2 - theta);
+
+          fric.position.set(wp.x, wp.y, 0.5);
+          fric.scale.y = Math.max(0.01, f * sc * 0.1);
+          fric.rotation.z = Math.PI + theta;
+        }
+      }
+
+      rendRef.current.render(sceneRef.current, camRef.current);
+    };
+    animId = requestAnimationFrame(animate);
+    frameRef.current = animId;
+    return () => cancelAnimationFrame(animId);
+  }, [state, params, showVectors]);
+
+  // Mouse orbit
+  const isDragging = useRef(false);
+  const prevMouse  = useRef({ x: 0, y: 0 });
+  const camTheta   = useRef(0.8);
+  const camPhi     = useRef(0.5);
+  const camR       = useRef(14);
+
+  const onMouseDown = e => { isDragging.current = true; prevMouse.current = { x: e.clientX, y: e.clientY }; };
+  const onMouseUp   = () => { isDragging.current = false; };
+  const onMouseMove = e => {
+    if (!isDragging.current || !camRef.current) return;
+    camTheta.current -= (e.clientX - prevMouse.current.x) * 0.01;
+    camPhi.current = Math.max(0.1, Math.min(1.4, camPhi.current - (e.clientY - prevMouse.current.y) * 0.01));
+    prevMouse.current = { x: e.clientX, y: e.clientY };
+    const r = camR.current, t = camTheta.current, p = camPhi.current;
+    camRef.current.position.set(r*Math.sin(t)*Math.cos(p), r*Math.sin(p), r*Math.cos(t)*Math.cos(p));
+    camRef.current.lookAt(0, 2, 0);
+  };
+  const onWheel = e => {
+    if (!camRef.current) return;
+    camR.current = Math.max(5, Math.min(30, camR.current + e.deltaY * 0.02));
+    const r = camR.current, t = camTheta.current, p = camPhi.current;
+    camRef.current.position.set(r*Math.sin(t)*Math.cos(p), r*Math.sin(p), r*Math.cos(t)*Math.cos(p));
+    camRef.current.lookAt(0, 2, 0);
+  };
+
+  return (
+    <div ref={mountRef} style={{ flex: 1, cursor: 'grab' }}
+      onMouseDown={onMouseDown} onMouseUp={onMouseUp}
+      onMouseMove={onMouseMove} onWheel={onWheel} />
+  );
+}
+
+// ---- Panel de control React ----
+function Panel({ params, setParams, state, onToggle, onReset, showVectors, setShowVectors }) {
+  const k   = getK(params.type);
+  const I   = k * params.mass * params.radius * params.radius;
+  const Ek  = 0.5 * params.mass * state.v * state.v;
+  const Er  = 0.5 * I * state.omega * state.omega;
+  const isPure = Math.abs(params.slip - 1.0) < 0.05;
+
+  const styles = {
+    panel: { width: 280, background: '#0d1018', borderLeft: '1px solid #1a2535', display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto', padding: 14 },
+    title: { color: '#00ccff', fontSize: 13, fontWeight: 'bold', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 },
+    sub:   { color: '#444', fontSize: 9, marginBottom: 10 },
+    sec:   { color: '#5577aa', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5, marginTop: 12 },
+    row:   { display: 'flex', justifyContent: 'space-between', marginBottom: 3 },
+    lbl:   { color: '#888', fontSize: 10 },
+    val:   (c) => ({ color: c, fontSize: 10, fontWeight: 'bold', fontFamily: 'monospace' }),
+    hr:    { height: 1, background: '#1a2535', margin: '8px 0' },
+    slider: { width: '100%', accentColor: '#00ccff', marginTop: 3, marginBottom: 6 },
+    slabelRow: { display: 'flex', justifyContent: 'space-between' },
+    eq:    { background: 'rgba(0,0,0,0.4)', border: '1px solid #1a2535', borderRadius: 4, padding: '8px 10px', fontSize: 10, fontFamily: 'monospace', lineHeight: 1.9 },
+    btn:   (primary) => ({ flex: 1, padding: '7px 10px', background: primary ? '#00ccff' : 'transparent', color: primary ? '#000' : '#888', border: '1px solid ' + (primary ? '#00ccff' : '#1a2535'), borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: primary ? 'bold' : 'normal', fontFamily: 'monospace', letterSpacing: '0.05em' }),
+    objBtn: (active) => ({ flex: 1, padding: '6px 4px', background: active ? 'rgba(0,200,255,0.15)' : 'transparent', color: active ? '#00ccff' : '#555', border: '1px solid ' + (active ? '#00ccff' : '#1a2535'), borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'monospace' }),
+    cond:  (ok) => ({ padding: '6px 10px', background: ok ? 'rgba(100,255,50,0.08)' : 'rgba(255,80,50,0.08)', border: '1px solid ' + (ok ? '#33aa22' : '#aa3322'), borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }),
+    dot:   (ok) => ({ width: 8, height: 8, borderRadius: '50%', background: ok ? '#88ff44' : '#ff5533', boxShadow: `0 0 6px ${ok ? '#88ff44' : '#ff5533'}` }),
+  };
+
+  return (
+    <div style={styles.panel}>
+      <div style={styles.title}>Rodadura Sin Deslizar</div>
+      <div style={styles.sub}>React + Three.js (React3D) · Cap. 13</div>
+
+      <div style={styles.hr} />
+
+      <div style={styles.sec}>Cinemática</div>
+      <div style={styles.row}><span style={styles.lbl}>Vel. lineal</span><span style={styles.val('#00ccff')}>{state.v.toFixed(3)} m/s</span></div>
+      <div style={styles.row}><span style={styles.lbl}>Vel. angular</span><span style={styles.val('#ff8844')}>{state.omega.toFixed(3)} rad/s</span></div>
+      <div style={styles.row}><span style={styles.lbl}>r · ω</span><span style={styles.val('#ffdd00')}>{(state.omega * params.radius).toFixed(3)} m/s</span></div>
+      <div style={styles.row}><span style={styles.lbl}>Posición</span><span style={styles.val('#aaa')}>{state.x.toFixed(3)} m</span></div>
+
+      <div style={styles.hr} />
+
+      <div style={styles.sec}>Dinámica</div>
+      <div style={styles.row}><span style={styles.lbl}>Aceleración</span><span style={styles.val('#88ff44')}>{getAccel(params.angle, params.type).toFixed(4)} m/s²</span></div>
+      <div style={styles.row}><span style={styles.lbl}>Fricción</span><span style={styles.val('#ffdd00')}>{getFriction(params.angle, params.mass, params.type).toFixed(4)} N</span></div>
+      <div style={styles.row}><span style={styles.lbl}>I / (m·r²)</span><span style={styles.val('#aaa')}>{k.toFixed(3)}</span></div>
+
+      <div style={styles.hr} />
+
+      <div style={styles.sec}>Energía</div>
+      <div style={styles.row}><span style={styles.lbl}>Traslación</span><span style={styles.val('#00ccff')}>{Ek.toFixed(4)} J</span></div>
+      <div style={styles.row}><span style={styles.lbl}>Rotación</span><span style={styles.val('#ff8844')}>{Er.toFixed(4)} J</span></div>
+      <div style={styles.row}><span style={styles.lbl}>Total</span><span style={styles.val('#fff')}>{(Ek+Er).toFixed(4)} J</span></div>
+
+      <div style={styles.hr} />
+
+      <div style={styles.sec}>Parámetros</div>
+      <div style={styles.slabelRow}><span style={styles.lbl}>Ángulo</span><span style={styles.val('#00ccff')}>{params.angle.toFixed(1)}°</span></div>
+      <input style={styles.slider} type="range" min="5" max="60" step="1" value={params.angle} onChange={e => setParams(p => ({...p, angle: +e.target.value}))} />
+
+      <div style={styles.slabelRow}><span style={styles.lbl}>Masa</span><span style={styles.val('#00ccff')}>{params.mass.toFixed(1)} kg</span></div>
+      <input style={styles.slider} type="range" min="0.5" max="10" step="0.5" value={params.mass} onChange={e => setParams(p => ({...p, mass: +e.target.value}))} />
+
+      <div style={styles.slabelRow}><span style={styles.lbl}>Radio</span><span style={styles.val('#00ccff')}>{params.radius.toFixed(2)} m</span></div>
+      <input style={styles.slider} type="range" min="0.2" max="1.0" step="0.1" value={params.radius} onChange={e => setParams(p => ({...p, radius: +e.target.value}))} />
+
+      <div style={styles.slabelRow}><span style={styles.lbl}>Deslizamiento</span><span style={styles.val(isPure ? '#88ff44' : '#ff8844')}>{params.slip.toFixed(2)}</span></div>
+      <input style={{...styles.slider, accentColor: isPure ? '#88ff44' : '#ff8844'}} type="range" min="0.1" max="3.0" step="0.1" value={params.slip} onChange={e => setParams(p => ({...p, slip: +e.target.value}))} />
+
+      <div style={styles.hr} />
+
+      <div style={styles.sec}>Objeto</div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+        {['sphere','cylinder','disk'].map((t, i) => (
+          <button key={t} style={styles.objBtn(params.type === t)} onClick={() => setParams(p => ({...p, type: t}))}>
+            {['Esfera','Cilindro','Disco'][i]}
+          </button>
+        ))}
+      </div>
+
+      <div style={styles.cond(isPure)}>
+        <div style={styles.dot(isPure)} />
+        <span style={{ color: isPure ? '#88ff44' : '#ff7755', fontSize: 9 }}>
+          {isPure ? 'Rodadura pura: v = r·ω' : params.slip < 1 ? 'Deslizamiento (barro)' : 'Deslizamiento (hielo)'}
+        </span>
+      </div>
+
+      <div style={styles.hr} />
+
+      <div style={styles.sec}>Ecuaciones (Cap. 13)</div>
+      <div style={styles.eq}>
+        <div style={{ color: '#88ff44' }}>v = r · ω</div>
+        <div style={{ color: '#ff8844' }}>a = g·sin(θ)/(1+I/mr²)</div>
+        <div style={{ color: '#ffdd00' }}>f = mg·sin(θ)/(1+mr²/I)</div>
+        <div style={{ color: '#00ccff' }}>Esfera:   I = 2/5·mr²</div>
+        <div style={{ color: '#00ccff' }}>Cilindro: I = 1/2·mr²</div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+        <button style={styles.btn(true)} onClick={onToggle}>
+          {state.running ? '⏸ Pausar' : '▶ Iniciar'}
+        </button>
+        <button style={styles.btn(false)} onClick={onReset}>↺ Reset</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <button style={styles.btn(showVectors)} onClick={() => setShowVectors(v => !v)}>
+          {showVectors ? '→ Vectores ON' : '→ Vectores OFF'}
+        </button>
+      </div>
+
+      <div style={{ color: '#333', fontSize: 8, marginTop: 10, lineHeight: 1.6 }}>
+        Arrastra para rotar cámara · Scroll para zoom
+      </div>
+    </div>
+  );
+}
+
+// ---- App principal ----
+function App() {
+  const [params, setParams] = useState({
+    angle: 20, mass: 2, radius: 0.5, slip: 1.0, type: 'sphere'
+  });
+  const [state, setState] = useState({ v: 0, omega: 0, x: 0.5, angleRot: 0, running: false, finished: false });
+  const [showVectors, setShowVectors] = useState(true);
+  const animRef = useRef(null);
+  const lastTs  = useRef(null);
+  const stateRef   = useRef(state);
+  const paramsRef  = useRef(params);
+  stateRef.current  = state;
+  paramsRef.current = params;
+
+  const step = useCallback((ts) => {
+    const dt = lastTs.current ? Math.min((ts - lastTs.current) / 1000, 0.05) : 0;
+    lastTs.current = ts;
+
+    const s = stateRef.current;
+    const p = paramsRef.current;
+
+    if (s.running && !s.finished) {
+      const a = getAccel(p.angle, p.type);
+      const newV   = s.v + a * dt;
+      const newOmega = (newV / p.radius) * p.slip;
+      const newX   = s.x + newV * dt;
+      const newRot = s.angleRot + newV * dt / p.radius;
+      const maxX   = RAMP_LEN - p.radius * 2.5;
+
+      if (newX >= maxX) {
+        setState(prev => ({ ...prev, x: maxX, v: 0, omega: 0, running: false, finished: true }));
+      } else {
+        setState(prev => ({ ...prev, v: newV, omega: newOmega, x: newX, angleRot: newRot }));
+      }
+    }
+
+    animRef.current = requestAnimationFrame(step);
+  }, []);
+
+  useEffect(() => {
+    animRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [step]);
+
+  // Reset when params change
+  useEffect(() => {
+    setState({ v: 0, omega: 0, x: 0.5, angleRot: 0, running: false, finished: false });
+  }, [params.type, params.radius, params.angle]);
+
+  const onToggle = () => setState(s => ({ ...s, running: !s.running, finished: false }));
+  const onReset  = () => setState({ v: 0, omega: 0, x: 0.5, angleRot: 0, running: false, finished: false });
+
+  return (
+    <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
+      <ThreeCanvas params={params} state={state} showVectors={showVectors} />
+      <Panel params={params} setParams={setParams} state={state}
+             onToggle={onToggle} onReset={onReset}
+             showVectors={showVectors} setShowVectors={setShowVectors} />
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>

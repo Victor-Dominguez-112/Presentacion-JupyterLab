@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Rodadura Sin Deslizar - Raylib Style</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: monospace; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1000" height="600"></canvas>
+<script>
+// ============================================================
+//  RODADURA SIN DESLIZAR - Estilo Raylib (Canvas 2D)
+//  Fisica: Physics for JS Games - Cap. 13
+//  v = r*omega | a = g*sin(t)/(1+I/mr^2)
+// ============================================================
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+// ---- Colores estilo Raylib ----
+const RAYWHITE  = '#f5f5f5';
+const DARKGRAY  = '#828282';
+const GRAY      = '#a0a0a0';
+const SKYBLUE   = '#66bfff';
+const ORANGE    = '#ffa500';
+const GREEN     = '#00e430';
+const YELLOW    = '#fdf900';
+const RED       = '#e62039';
+const BLUE      = '#0079f1';
+const BLACK     = '#000000';
+const DARKBLUE  = '#001240';
+const LIME      = '#009900';
+
+// ---- Constantes fisicas ----
+const G        = 9.8;
+const RAMP_LEN = 500; // pixeles
+const SCALE    = 50;  // px por metro
+
+// ---- Tipos de objeto ----
+const TYPES = ['Esfera (I=2/5 mr²)', 'Cilindro (I=1/2 mr²)', 'Disco (I=1/2 mr²)'];
+const K_VALS = [2/5, 1/2, 1/2];
+
+// ---- Estado ----
+let params = { angleDeg: 25, mass: 2, radius: 0.5, slip: 1.0, objType: 0 };
+let state  = { v: 0, omega: 0, x: 0, angleRot: 0, running: false, finished: false };
+let vHist  = [], vrHist = [];
+const MAX_HIST = 300;
+
+function resetState() {
+  state = { v: 0, omega: 0, x: 0.3, angleRot: 0, running: false, finished: false };
+}
+
+function getK()  { return K_VALS[params.objType]; }
+function getAccel() {
+  const t = params.angleDeg * Math.PI / 180;
+  return G * Math.sin(t) / (1 + getK());
+}
+function getFriction() {
+  const t = params.angleDeg * Math.PI / 180;
+  const k = getK();
+  return params.mass * G * Math.sin(t) / (1 + 1/k);
+}
+
+function physicsStep(dt) {
+  if (!state.running || state.finished) return;
+  const a = getAccel();
+  state.v        += a * dt;
+  state.omega     = (state.v / params.radius) * params.slip;
+  state.x        += state.v * dt;
+  state.angleRot += state.v * dt / params.radius;
+  const maxX = RAMP_LEN / SCALE - params.radius * 2;
+  if (state.x >= maxX) {
+    state.x = maxX; state.v = 0; state.omega = 0;
+    state.running = false; state.finished = true;
+  }
+}
+
+// ---- Coordenadas del plano inclinado ----
+const RAMP_ORIGIN = { x: 80, y: 520 };
+
+function slopeToCanvas(s) {
+  const theta = params.angleDeg * Math.PI / 180;
+  return {
+    x: RAMP_ORIGIN.x + s * SCALE * Math.cos(theta),
+    y: RAMP_ORIGIN.y - s * SCALE * Math.sin(theta)
+  };
+}
+
+// ---- Dibujar rampa ----
+function drawRamp() {
+  const theta = params.angleDeg * Math.PI / 180;
+  const top   = slopeToCanvas(RAMP_LEN / SCALE);
+  const bot   = RAMP_ORIGIN;
+
+  // Superficie
+  ctx.beginPath();
+  ctx.moveTo(top.x, top.y);
+  ctx.lineTo(bot.x, bot.y);
+  ctx.strokeStyle = SKYBLUE;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Relleno de la rampa
+  ctx.beginPath();
+  ctx.moveTo(top.x, top.y);
+  ctx.lineTo(bot.x, bot.y);
+  ctx.lineTo(bot.x, top.y);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(0,120,200,0.15)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,120,200,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Piso
+  ctx.beginPath();
+  ctx.moveTo(bot.x - 20, bot.y);
+  ctx.lineTo(bot.x + RAMP_LEN * 0.8, bot.y);
+  ctx.strokeStyle = GRAY;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Angulo indicador
+  ctx.beginPath();
+  ctx.arc(bot.x, bot.y, 40, -theta, 0);
+  ctx.strokeStyle = YELLOW;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = YELLOW;
+  ctx.font = '12px monospace';
+  ctx.fillText(`${params.angleDeg.toFixed(1)}°`, bot.x + 45, bot.y - 8);
+}
+
+// ---- Dibujar objeto ----
+function drawObject() {
+  const theta  = params.angleDeg * Math.PI / 180;
+  const pos    = slopeToCanvas(state.x);
+  const r      = params.radius * SCALE;
+  const perpX  = -Math.sin(theta);
+  const perpY  = -Math.cos(theta);
+  const cx     = pos.x + perpX * r;
+  const cy     = pos.y + perpY * r;
+
+  const colors = [SKYBLUE, ORANGE, '#a8ff3e'];
+  const col    = colors[params.objType];
+
+  // Sombra
+  ctx.beginPath();
+  ctx.arc(cx + 3, cy + 3, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fill();
+
+  // Cuerpo
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = col;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Rayos para ver rotacion
+  const numSpokes = params.objType === 2 ? 8 : 6;
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < numSpokes; i++) {
+    const ang = state.angleRot + (i / numSpokes) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + r * 0.85 * Math.cos(ang), cy + r * 0.85 * Math.sin(ang));
+    ctx.stroke();
+  }
+
+  // Marca roja
+  ctx.beginPath();
+  ctx.arc(cx + r * 0.6 * Math.cos(state.angleRot), cy + r * 0.6 * Math.sin(state.angleRot), 4, 0, Math.PI * 2);
+  ctx.fillStyle = RED;
+  ctx.fill();
+
+  // Punto de contacto
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = YELLOW;
+  ctx.fill();
+
+  return { cx, cy, r };
+}
+
+// ---- Dibujar vectores ----
+function drawVectors(cx, cy) {
+  const theta   = params.angleDeg * Math.PI / 180;
+  const f       = getFriction();
+  const m       = params.mass;
+  const sc      = 8;
+
+  function arrow(x, y, dx, dy, color, label) {
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 0.01) return;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + dx, y + dy);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // punta
+    const ang = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(x + dx, y + dy);
+    ctx.lineTo(x + dx - 10*Math.cos(ang-0.4), y + dy - 10*Math.sin(ang-0.4));
+    ctx.lineTo(x + dx - 10*Math.cos(ang+0.4), y + dy - 10*Math.sin(ang+0.4));
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(label, x + dx + 5, y + dy);
+  }
+
+  // Gravedad (abajo)
+  arrow(cx, cy, 0, m * G * sc * 0.4, RED, `Fg=${( m*G).toFixed(1)}N`);
+  // Normal (perpendicular a rampa)
+  const nx = -Math.sin(theta) * m * G * Math.cos(theta) * sc * 0.4;
+  const ny = -Math.cos(theta) * m * G * Math.cos(theta) * sc * 0.4;
+  arrow(cx, cy, nx, ny, GREEN, `N=${(m*G*Math.cos(theta)).toFixed(1)}N`);
+  // Friccion (cuesta arriba)
+  const fx = -Math.cos(theta) * f * sc * 0.7;
+  const fy =  Math.sin(theta) * f * sc * 0.7;
+  arrow(cx, cy, fx, fy, YELLOW, `f=${f.toFixed(2)}N`);
+}
+
+// ---- Panel HUD estilo Raylib ----
+function drawHUD() {
+  const k   = getK();
+  const I   = k * params.mass * params.radius * params.radius;
+  const Ek  = 0.5 * params.mass * state.v * state.v;
+  const Er  = 0.5 * I * state.omega * state.omega;
+  const a   = getAccel();
+  const isPure = Math.abs(params.slip - 1.0) < 0.05;
+
+  // Fondo panel derecho
+  ctx.fillStyle = 'rgba(10,15,25,0.92)';
+  ctx.fillRect(700, 0, 300, 600);
+  ctx.strokeStyle = 'rgba(30,50,80,1)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(700, 0, 300, 600);
+
+  function label(text, x, y, color = RAYWHITE, size = 11) {
+    ctx.fillStyle = color;
+    ctx.font = `${size}px monospace`;
+    ctx.fillText(text, x, y);
+  }
+
+  function hline(y) {
+    ctx.beginPath(); ctx.moveTo(700, y); ctx.lineTo(1000, y);
+    ctx.strokeStyle = 'rgba(30,50,80,1)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  label('RODADURA SIN DESLIZAR', 710, 22, SKYBLUE, 12);
+  label('Fisica Cap. 13 - Raylib', 710, 36, DARKGRAY, 9);
+  hline(44);
+
+  label('CINEMATICA', 710, 58, GRAY, 10);
+  label(`Vel. lineal:  ${state.v.toFixed(3)} m/s`,           710, 73,  SKYBLUE);
+  label(`Vel. angular: ${state.omega.toFixed(3)} rad/s`,      710, 87,  ORANGE);
+  label(`r * omega:    ${(state.omega*params.radius).toFixed(3)} m/s`, 710, 101, YELLOW);
+  label(`Posicion:     ${state.x.toFixed(3)} m`,              710, 115, '#aaa');
+  hline(124);
+
+  label('DINAMICA', 710, 138, GRAY, 10);
+  label(`Aceleracion: ${a.toFixed(4)} m/s²`,  710, 153, '#a8ff3e');
+  label(`Friccion:    ${getFriction().toFixed(4)} N`, 710, 167, YELLOW);
+  label(`I/(mr²):     ${k.toFixed(3)}`,         710, 181, '#aaa');
+  label(`Angulo:      ${params.angleDeg.toFixed(1)}°`, 710, 195, '#aaa');
+  hline(204);
+
+  label('ENERGIA', 710, 218, GRAY, 10);
+  label(`E.traslacion: ${Ek.toFixed(4)} J`, 710, 233, SKYBLUE);
+  label(`E.rotacion:   ${Er.toFixed(4)} J`, 710, 247, ORANGE);
+  label(`E.total:      ${(Ek+Er).toFixed(4)} J`, 710, 261, RAYWHITE);
+  hline(270);
+
+  label('ECUACIONES', 710, 284, GRAY, 10);
+  label('v = r·ω',                710, 298, '#a8ff3e', 10);
+  label('a = g·sin(θ)/(1+I/mr²)', 710, 311, ORANGE, 10);
+  label('f = mg·sin(θ)/(1+mr²/I)',710, 324, YELLOW, 10);
+  label('Esfera:   I = 2/5·mr²',  710, 337, SKYBLUE, 10);
+  label('Cilindro: I = 1/2·mr²',  710, 350, SKYBLUE, 10);
+  hline(358);
+
+  label('OBJETO: ' + TYPES[params.objType], 710, 372, SKYBLUE, 10);
+  label(`[1]Esfera  [2]Cilindro  [3]Disco`, 710, 386, DARKGRAY, 9);
+  hline(394);
+
+  label('DESLIZAMIENTO: ' + params.slip.toFixed(2), 710, 408, isPure ? '#a8ff3e' : ORANGE, 10);
+  label(isPure ? '✓ RODADURA PURA (v = r·ω)' : (params.slip < 1 ? '✗ Patinando en barro' : '✗ Patinando en hielo'),
+        710, 422, isPure ? '#a8ff3e' : RED, 10);
+  hline(430);
+
+  label('CONTROLES', 710, 444, GRAY, 10);
+  label('[ESPACIO] Iniciar/Pausar', 710, 458, DARKGRAY, 9);
+  label('[R] Reiniciar',            710, 470, DARKGRAY, 9);
+  label('[↑/↓] Angulo inclinacion', 710, 482, DARKGRAY, 9);
+  label('[A/D] Deslizamiento',      710, 494, DARKGRAY, 9);
+  label('[1/2/3] Cambiar objeto',   710, 506, DARKGRAY, 9);
+
+  // Estado simulacion
+  hline(515);
+  if (!state.running && !state.finished) {
+    label('Presiona ESPACIO para iniciar', 710, 535, RAYWHITE, 11);
+  } else if (state.finished) {
+    label('¡Llego al final! Presiona R', 710, 535, '#a8ff3e', 11);
+  } else {
+    label('● SIMULANDO...', 710, 535, '#a8ff3e', 11);
+  }
+}
+
+// ---- Grafica velocidad ----
+function drawGraph() {
+  const gx = 710, gy = 545, gw = 275, gh = 45;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(gx, gy, gw, gh);
+  ctx.strokeStyle = 'rgba(30,50,80,1)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(gx, gy, gw, gh);
+
+  ctx.fillStyle = GRAY;
+  ctx.font = '9px monospace';
+  ctx.fillText('v (m/s)', gx + 2, gy + 10);
+
+  if (vHist.length < 2) return;
+  const maxV = Math.max(...vHist, ...vrHist, 0.1);
+
+  ctx.lineWidth = 1.5;
+  ['v', 'vr'].forEach((key, ki) => {
+    const hist  = ki === 0 ? vHist : vrHist;
+    const color = ki === 0 ? SKYBLUE : ORANGE;
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    hist.forEach((val, i) => {
+      const x = gx + (i / MAX_HIST) * gw;
+      const y = gy + gh - (val / maxV) * (gh - 4);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = SKYBLUE; ctx.fillRect(gx + 60, gy + 2, 8, 3);
+  ctx.fillStyle = SKYBLUE; ctx.font = '8px monospace'; ctx.fillText('v lineal', gx + 70, gy + 9);
+  ctx.fillStyle = ORANGE;  ctx.fillRect(gx + 130, gy + 2, 8, 3);
+  ctx.fillStyle = ORANGE;  ctx.fillText('r·ω', gx + 140, gy + 9);
+}
+
+// ---- Teclado ----
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ')   { state.running = !state.running; state.finished = false; e.preventDefault(); }
+  if (e.key === 'r' || e.key === 'R') resetState();
+  if (e.key === '1')   { params.objType = 0; resetState(); }
+  if (e.key === '2')   { params.objType = 1; resetState(); }
+  if (e.key === '3')   { params.objType = 2; resetState(); }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ---- Loop ----
+let last = null;
+function loop(ts) {
+  const dt = last ? Math.min((ts - last) / 1000, 0.05) : 0;
+  last = ts;
+
+  if (keys['ArrowUp']   && params.angleDeg < 60) { params.angleDeg += 20 * dt; resetState(); }
+  if (keys['ArrowDown'] && params.angleDeg >  5) { params.angleDeg -= 20 * dt; resetState(); }
+  if (keys['d'] && params.slip < 3.0) params.slip += dt;
+  if (keys['a'] && params.slip > 0.1) params.slip -= dt;
+
+  physicsStep(dt);
+
+  vHist.push(state.v);
+  vrHist.push(state.omega * params.radius);
+  if (vHist.length  > MAX_HIST) vHist.shift();
+  if (vrHist.length > MAX_HIST) vrHist.shift();
+
+  // Fondo
+  ctx.fillStyle = '#0a0c10';
+  ctx.fillRect(0, 0, 700, 600);
+
+  // Titulo
+  ctx.fillStyle = SKYBLUE;
+  ctx.font = 'bold 16px monospace';
+  ctx.fillText('RODADURA SIN DESLIZAR', 20, 30);
+  ctx.fillStyle = DARKGRAY;
+  ctx.font = '10px monospace';
+  ctx.fillText('Estilo Raylib — Simulacion 2D', 20, 45);
+
+  drawRamp();
+  const { cx, cy } = drawObject();
+  drawVectors(cx, cy);
+
+  // Leyenda vectores
+  ctx.fillStyle = RED;    ctx.fillRect(20, 555, 10, 3);
+  ctx.fillStyle = RED;    ctx.font = '9px monospace'; ctx.fillText('Gravedad', 33, 562);
+  ctx.fillStyle = GREEN;  ctx.fillRect(100, 555, 10, 3);
+  ctx.fillStyle = GREEN;  ctx.fillText('Normal', 113, 562);
+  ctx.fillStyle = YELLOW; ctx.fillRect(165, 555, 10, 3);
+  ctx.fillStyle = YELLOW; ctx.fillText('Friccion', 178, 562);
+
+  drawHUD();
+  drawGraph();
+
+  requestAnimationFrame(loop);
+}
+
+resetState();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

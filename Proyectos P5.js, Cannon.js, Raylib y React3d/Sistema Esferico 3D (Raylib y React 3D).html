@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Sistema Solar 3D — Three.js + UI</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#000; overflow:hidden; font-family:monospace; }
+    #panel {
+      position:absolute; top:0; right:0; width:240px; height:100vh;
+      background:rgba(4,8,24,0.92); border-left:1px solid #0af;
+      z-index:10; display:flex; flex-direction:column;
+      padding:14px 12px; gap:8px; overflow-y:auto;
+    }
+    #panel h2 { color:#fff; font-size:13px; }
+    #panel small { color:#668; font-size:10px; }
+    .sep { border:none; border-top:1px solid #0af3; margin:2px 0; }
+    .row { display:flex; justify-content:space-between; align-items:center; }
+    .row label { color:#9ac; font-size:11px; }
+    .row span  { color:#0ff; font-size:11px; width:44px; text-align:right; }
+    input[type=range]{ width:100%; accent-color:#0af; cursor:pointer; }
+    .btn { width:100%; padding:7px; background:#071428; color:#0af; border:1px solid #0af; border-radius:4px; cursor:pointer; font-size:12px; }
+    .btn:hover { background:#0af; color:#000; }
+    .btn-row { display:flex; gap:6px; }
+    .btn-row .btn { font-size:11px; }
+    .toggle-row { display:flex; align-items:center; gap:8px; color:#9ac; font-size:11px; cursor:pointer; }
+    .toggle-row input { accent-color:#0af; cursor:pointer; }
+    .planet-item { display:flex; align-items:center; gap:6px; font-size:10px; color:#aaa; padding:3px 0; border-bottom:1px solid #0af1; }
+    .dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .stat { color:#0ff; font-size:11px; line-height:1.8; }
+  </style>
+</head>
+<body>
+<div id="panel">
+  <h2>⭐ Sistema Solar 3D</h2>
+  <small>Three.js + UI interactiva</small>
+  <hr class="sep"/>
+  <div class="btn-row">
+    <button class="btn" onclick="addPlanet()">+ Planeta</button>
+    <button class="btn" onclick="resetSim()">Reset</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="btnPause" onclick="togglePause()">⏸ Pausa</button>
+    <button class="btn" id="btnTrail" onclick="toggleTrail()">〰 Estela</button>
+  </div>
+  <hr class="sep"/>
+  <div class="row"><label>Gravedad G</label><span id="vG">6000</span></div>
+  <input type="range" id="slG" min="500" max="20000" value="6000" oninput="G=+this.value;document.getElementById('vG').textContent=this.value">
+  <div class="row"><label>Masa Sol</label><span id="vM">1.0M</span></div>
+  <input type="range" id="slM" min="100000" max="5000000" value="1000000" oninput="SUN_MASS=+this.value;document.getElementById('vM').textContent=(this.value/1e6).toFixed(1)+'M'">
+  <div class="row"><label>Velocidad</label><span id="vS">1x</span></div>
+  <input type="range" id="slS" min="1" max="10" value="1" step="1" oninput="simSpeed=+this.value;document.getElementById('vS').textContent=this.value+'x'">
+  <div class="row"><label>Estela largo</label><span id="vT">180</span></div>
+  <input type="range" id="slT" min="30" max="500" value="180" oninput="TRAIL_LEN=+this.value;document.getElementById('vT').textContent=this.value">
+  <hr class="sep"/>
+  <label class="toggle-row"><input type="checkbox" id="chkOrbits" checked onchange="toggleOrbits(this.checked)"> Anillos órbita</label>
+  <label class="toggle-row"><input type="checkbox" id="chkVec"    onchange="toggleVectors(this.checked)"> Vectores velocidad</label>
+  <label class="toggle-row"><input type="checkbox" id="chkGrid"   checked onchange="gridHelper.visible=this.checked"> Grilla</label>
+  <hr class="sep"/>
+  <div style="color:#9ac;font-size:11px">Cuerpos</div>
+  <div id="planetList"></div>
+  <hr class="sep"/>
+  <div class="stat" id="stats">Cuerpos: 5<br>t = 0.0 s<br>FPS: —</div>
+</div>
+
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const PW = 240;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth - PW, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.domElement.style.position = 'absolute';
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x010510);
+
+const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-PW)/window.innerHeight, 0.1, 20000);
+camera.position.set(0,280,720); camera.lookAt(0,0,0);
+
+scene.add(new THREE.AmbientLight(0x112244,2.5));
+scene.add(new THREE.PointLight(0xfff4aa,5,3500));
+
+// Estrellas
+const sv=[];
+for(let i=0;i<3000;i++) sv.push((Math.random()-.5)*9000,(Math.random()-.5)*9000,(Math.random()-.5)*9000);
+const sg=new THREE.BufferGeometry();
+sg.setAttribute('position',new THREE.Float32BufferAttribute(sv,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffffff,size:1.8})));
+
+// Grilla
+const gridHelper=new THREE.GridHelper(1200,20,0x112255,0x112255);
+scene.add(gridHelper);
+
+// Sol
+let G=6000, SUN_MASS=1e6, simSpeed=1, TRAIL_LEN=180;
+const sunMesh=new THREE.Mesh(new THREE.SphereGeometry(42,32,32),new THREE.MeshBasicMaterial({color:0xffdd22}));
+scene.add(sunMesh);
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(56,32,32),new THREE.MeshBasicMaterial({color:0xff8800,transparent:true,opacity:0.10,side:THREE.BackSide})));
+
+// Planetas
+const bodies=[], orbits=[], arrows=[];
+const COLORS=[0xaaaaaa,0xffaa44,0x4499ff,0xff4444,0xffcc88,0xaaddff,0x88ffcc,0xff88ff];
+const NAMES=['Mercurio','Venus','Tierra','Marte','Júpiter','Saturno','Urano','Neptuno'];
+let colorIdx=0, paused=false, showTrail=true, showOrbits=true, showVectors=false;
+
+function makePlanet(r,theta,incl,size,color,name){
+  const mesh=new THREE.Mesh(
+    new THREE.SphereGeometry(size,24,24),
+    new THREE.MeshPhongMaterial({color,shininess:90,emissive:color,emissiveIntensity:0.1})
+  );
+  scene.add(mesh);
+
+  const x=r*Math.cos(theta)*Math.cos(incl), y=r*Math.sin(incl), z=r*Math.sin(theta)*Math.cos(incl);
+  const vOrb=Math.sqrt(G*SUN_MASS/r);
+
+  // Anillo
+  const pts=[];
+  for(let i=0;i<=128;i++){const a=(i/128)*Math.PI*2;pts.push(new THREE.Vector3(r*Math.cos(a)*Math.cos(incl),r*Math.sin(incl),r*Math.sin(a)*Math.cos(incl)));}
+  const orbitLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color,transparent:true,opacity:0.2}));
+  orbitLine.visible=showOrbits;
+  scene.add(orbitLine); orbits.push(orbitLine);
+
+  // Flecha velocidad
+  const dir=new THREE.Vector3(-Math.sin(theta),0,Math.cos(theta)).normalize();
+  const arrow=new THREE.ArrowHelper(dir,new THREE.Vector3(x,y,z),40,0xffff00,10,6);
+  arrow.visible=showVectors;
+  scene.add(arrow); arrows.push(arrow);
+
+  // Trail
+  const tp=new Float32Array(500*3),tg=new THREE.BufferGeometry();
+  tg.setAttribute('position',new THREE.BufferAttribute(tp,3));
+  tg.setDrawRange(0,0);
+  const trailLine=new THREE.Line(tg,new THREE.LineBasicMaterial({color,transparent:true,opacity:0.55}));
+  scene.add(trailLine);
+
+  const body={mesh,orbitLine,arrow,trailLine,pos:new THREE.Vector3(x,y,z),vel:new THREE.Vector3(-Math.sin(theta)*vOrb,0,Math.cos(theta)*vOrb),trail:[],color,size,name:name||`P${colorIdx+1}`};
+  mesh.position.copy(body.pos);
+  bodies.push(body); colorIdx++;
+  updateList();
+}
+
+function createInitial(){
+  makePlanet(130,0,0,8,0xaaaaaa,'Mercurio');
+  makePlanet(190,1.2,0.06,12,0xffaa44,'Venus');
+  makePlanet(265,2.5,0,13,0x4499ff,'Tierra');
+  makePlanet(355,4.1,-0.03,10,0xff4444,'Marte');
+}
+createInitial();
+
+function updateList(){
+  const list=document.getElementById('planetList');
+  list.innerHTML=`<div class="planet-item"><div class="dot" style="background:#ffdd22"></div><span>Sol</span></div>`;
+  bodies.forEach(b=>{
+    const hex='#'+b.color.toString(16).padStart(6,'0');
+    list.innerHTML+=`<div class="planet-item"><div class="dot" style="background:${hex}"></div><span>${b.name} r=${b.pos.length().toFixed(0)}</span></div>`;
+  });
+}
+
+// Física
+const _acc=new THREE.Vector3();
+function stepPhysics(){
+  const steps=Math.max(1,Math.round(simSpeed));
+  for(let s=0;s<steps;s++){
+    bodies.forEach(b=>{
+      _acc.set(-b.pos.x,-b.pos.y,-b.pos.z);
+      const dist=Math.max(_acc.length(),5);
+      _acc.normalize().multiplyScalar(G*SUN_MASS/(dist*dist));
+      b.vel.addScaledVector(_acc,0.016);
+      b.pos.addScaledVector(b.vel,0.016);
+      b.mesh.position.copy(b.pos);
+      if(showVectors){b.arrow.position.copy(b.pos);b.arrow.setDirection(b.vel.clone().normalize());}
+      if(showTrail){
+        b.trail.push(b.pos.clone());
+        if(b.trail.length>TRAIL_LEN)b.trail.shift();
+        const arr=b.trailLine.geometry.attributes.position.array;
+        for(let i=0;i<b.trail.length;i++){arr[i*3]=b.trail[i].x;arr[i*3+1]=b.trail[i].y;arr[i*3+2]=b.trail[i].z;}
+        b.trailLine.geometry.setDrawRange(0,b.trail.length);
+        b.trailLine.geometry.attributes.position.needsUpdate=true;
+      }
+    });
+  }
+  sunMesh.rotation.y+=0.004;
+}
+
+// Cámara
+let isDrag=false,px0=0,py0=0,camTheta=0.4,camPhi=0.38,camR=780;
+renderer.domElement.addEventListener('mousedown',e=>{isDrag=true;px0=e.clientX;py0=e.clientY;});
+window.addEventListener('mouseup',()=>isDrag=false);
+window.addEventListener('mousemove',e=>{
+  if(!isDrag)return;
+  camTheta-=(e.clientX-px0)*0.006;camPhi+=(e.clientY-py0)*0.006;
+  camPhi=Math.max(-1.3,Math.min(1.3,camPhi));px0=e.clientX;py0=e.clientY;
+});
+window.addEventListener('wheel',e=>{camR=Math.max(150,Math.min(3500,camR+e.deltaY*0.7));},{passive:true});
+
+// Loop
+let elapsed=0,lastTime=performance.now(),fps=60,fpsC=0,fpsT=0;
+function animate(){
+  requestAnimationFrame(animate);
+  const now=performance.now(),dt=Math.min((now-lastTime)/1000,0.05);lastTime=now;
+  if(!paused){stepPhysics();elapsed+=dt*simSpeed;}
+  fpsC++;fpsT+=dt;if(fpsT>0.5){fps=Math.round(fpsC/fpsT);fpsC=0;fpsT=0;}
+  camera.position.set(camR*Math.cos(camPhi)*Math.sin(camTheta),camR*Math.sin(camPhi),camR*Math.cos(camPhi)*Math.cos(camTheta));
+  camera.lookAt(0,0,0);
+  renderer.render(scene,camera);
+  if(fpsC%8===0){
+    document.getElementById('stats').innerHTML=`Cuerpos: ${bodies.length+1}<br>t = ${elapsed.toFixed(1)} s<br>FPS: ${fps}`;
+    updateList();
+  }
+}
+animate();
+
+// Botones globales
+window.addPlanet=()=>{
+  const r=140+Math.random()*380,theta=Math.random()*Math.PI*2,incl=(Math.random()-.5)*0.35,size=6+Math.random()*16;
+  makePlanet(r,theta,incl,size,COLORS[colorIdx%COLORS.length]);
+};
+window.resetSim=()=>{
+  bodies.forEach(b=>{scene.remove(b.mesh);scene.remove(b.trailLine);scene.remove(b.orbitLine);scene.remove(b.arrow);});
+  bodies.length=0;orbits.length=0;arrows.length=0;colorIdx=0;elapsed=0;createInitial();
+};
+window.togglePause=()=>{paused=!paused;document.getElementById('btnPause').textContent=paused?'▶ Reanudar':'⏸ Pausa';};
+window.toggleTrail=()=>{showTrail=!showTrail;bodies.forEach(b=>{b.trailLine.visible=showTrail;b.trail=[];});document.getElementById('btnTrail').textContent=showTrail?'〰 Estela':'〰 Sin estela';};
+window.toggleOrbits=v=>{showOrbits=v;orbits.forEach(o=>o.visible=v);};
+window.toggleVectors=v=>{showVectors=v;arrows.forEach(a=>a.visible=v);};
+
+// Exponer variables para sliders
+Object.defineProperty(window,'G',{get:()=>G,set:v=>G=v});
+Object.defineProperty(window,'SUN_MASS',{get:()=>SUN_MASS,set:v=>SUN_MASS=v});
+Object.defineProperty(window,'simSpeed',{get:()=>simSpeed,set:v=>simSpeed=v});
+Object.defineProperty(window,'TRAIL_LEN',{get:()=>TRAIL_LEN,set:v=>TRAIL_LEN=v});
+Object.defineProperty(window,'gridHelper',{get:()=>gridHelper});
+
+window.addEventListener('resize',()=>{
+  const W2=window.innerWidth-PW;
+  camera.aspect=W2/window.innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(W2,window.innerHeight);
+});
+</script>
+</body>
+</html>

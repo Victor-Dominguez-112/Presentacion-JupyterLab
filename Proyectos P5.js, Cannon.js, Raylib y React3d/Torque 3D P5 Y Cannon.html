@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Torque 3D — p5.js + Cannon.js | Cap. 13</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+<style>
+:root {
+  --bg:      #060810;
+  --panel:   #0c0f1a;
+  --border:  #161d30;
+  --accent:  #47c8ff;
+  --accent2: #e8ff47;
+  --accent3: #ff6b47;
+  --text:    #a8b8d0;
+  --dim:     #3a4560;
+  --mono:    'Share Tech Mono', monospace;
+  --display: 'Rajdhani', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--mono); }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 20px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; flex-wrap: wrap; gap: 8px;
+}
+header h1 { font-family: var(--display); font-size: 1.3rem; font-weight: 700; color: #fff; letter-spacing: .05em; }
+header h1 span { color: var(--accent); }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.badge { border: 1px solid var(--accent); color: var(--accent); font-size: 9px; padding: 2px 8px; border-radius: 2px; letter-spacing: .1em; }
+.badge.y { border-color: var(--accent2); color: var(--accent2); }
+.engine-tag { font-size: 10px; color: var(--dim); margin-top: 3px; }
+.engine-tag strong { color: var(--accent); }
+.header-right { font-size: 10px; color: var(--dim); text-align: right; line-height: 1.6; }
+
+.tab-nav { display: flex; border-bottom: 1px solid var(--border); padding: 0 20px; flex-shrink: 0; overflow-x: auto; }
+.tab-btn {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--dim); font-family: var(--mono); font-size: 11px;
+  padding: 9px 16px; cursor: pointer; white-space: nowrap; transition: all .2s; letter-spacing: .05em;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 2px; background: var(--border); font-size: 9px; margin-right: 7px;
+}
+.tab-btn.active .tab-num { background: var(--accent); color: #000; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+#viewport { flex: 1; position: relative; overflow: hidden; cursor: grab; }
+#viewport:active { cursor: grabbing; }
+#viewport canvas { display: block; }
+.vp-label { position: absolute; top: 10px; left: 12px; font-size: 9px; color: var(--dim); letter-spacing: .1em; pointer-events: none; }
+.cannon-tag { position: absolute; top: 10px; right: 12px; background: var(--accent); color: #000; font-size: 9px; padding: 2px 8px; border-radius: 2px; font-weight: 600; letter-spacing: .08em; pointer-events: none; }
+.hint { position: absolute; bottom: 10px; left: 12px; font-size: 9px; color: var(--dim); pointer-events: none; }
+
+#sidebar { width: 255px; flex-shrink: 0; border-left: 1px solid var(--border); overflow-y: auto; }
+.card { border-bottom: 1px solid var(--border); padding: 11px 13px; }
+.card h3 { font-family: var(--display); font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 7px; }
+.card p { font-size: 10px; color: var(--dim); line-height: 1.7; }
+.formula { background: #080b12; border-left: 2px solid var(--accent); padding: 6px 10px; font-size: 10px; color: var(--accent2); margin: 7px 0; border-radius: 0 3px 3px 0; line-height: 2; }
+.ctrl-item { margin-bottom: 8px; }
+.ctrl-item label { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); margin-bottom: 3px; }
+.ctrl-item label span { color: var(--accent); }
+input[type=range] { width: 100%; accent-color: var(--accent); height: 3px; cursor: pointer; }
+select { width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 5px 8px; font-family: var(--mono); font-size: 10px; border-radius: 3px; margin-top: 3px; }
+.btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); font-family: var(--mono); font-size: 10px; padding: 5px 12px; border-radius: 3px; cursor: pointer; transition: all .15s; }
+.btn:hover { background: var(--accent); color: #000; }
+.data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.di { background: #080b12; border-radius: 3px; padding: 5px 8px; }
+.di .lb { font-size: 8px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+.di .vl { font-size: 12px; color: #fff; font-weight: 600; }
+.page-ref { font-size: 9px; color: var(--dim); border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+<header>
+  <div>
+    <h1>Torque <span>&amp;</span> Dinámica 3D</h1>
+    <div class="badges" style="margin-top:4px;">
+      <span class="badge y">p5.js WEBGL</span>
+      <span class="badge">Cannon.js</span>
+      <span class="badge" style="border-color:var(--dim);color:var(--dim);">Cap. 13 · pp.336–355</span>
+    </div>
+    <div class="engine-tag">Sims 1 &amp; 2: <strong>p5.js</strong> · Sim 3: <strong>Cannon.js</strong> calcula · <strong>p5.js</strong> dibuja</div>
+  </div>
+  <div class="header-right">Universidad Cuauhtémoc · Métodos Numéricos<br>Víctor · Jesús · Diego · Mario</div>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab(0)"><span class="tab-num">1</span>Torque — Cubo 3D</button>
+  <button class="tab-btn"        onclick="switchTab(1)"><span class="tab-num">2</span>Turbinas 3D</button>
+  <button class="tab-btn"        onclick="switchTab(2)"><span class="tab-num">3</span>Rodadura — Cannon.js</button>
+</nav>
+
+<div class="main">
+  <div id="viewport">
+    <span class="vp-label" id="vp-label">SIM_01 · TORQUE_CUBE · p5.js WEBGL</span>
+    <span class="cannon-tag" id="ctag" style="display:none">CANNON.js</span>
+    <span class="hint">🖱️ Arrastrar = rotar · Scroll = zoom</span>
+    <div id="p5canvas"></div>
+  </div>
+
+  <div id="sidebar">
+    <!-- Info -->
+    <div class="card" id="ci0">
+      <h3>Segunda Ley Rotacional 3D</h3>
+      <p>Cubo rígido en WEBGL con torque sobre ejes seleccionables. Física calculada por p5.js.</p>
+      <div class="formula">τ = I · α<br>α = τ / I<br>ω += α · dt<br>θ += ω · dt</div>
+      <div class="page-ref">📖 pp. 345–347</div>
+    </div>
+    <div class="card" id="ci1" style="display:none">
+      <h3>Turbinas 3D</h3>
+      <p>Tres turbinas cilindricas 3D. Clic sostenido aplica torque. Diferente I → diferente α.</p>
+      <div class="formula">α = τ / I<br>ω_term = τ / k</div>
+      <div class="page-ref">📖 pp. 347–349</div>
+    </div>
+    <div class="card" id="ci2" style="display:none">
+      <h3>Motor Cannon.js 3D</h3>
+      <p><strong style="color:var(--accent)">Cannon.js</strong> simula la física real en 3D: gravedad, colisión con plano, fricción y rodadura. <strong style="color:var(--accent2)">p5.js WEBGL</strong> solo dibuja lo que Cannon calcula.</p>
+      <div class="formula">world.step(1/60)<br>pos ← body.position<br>rot ← body.quaternion</div>
+      <div class="page-ref">📖 pp. 350–354</div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card" id="cc0">
+      <h3>Controles</h3>
+      <div class="ctrl-item"><label>Torque (τ) <span id="tv0">1.0</span></label>
+        <input type="range" id="tq0" min="0" max="5" step="0.1" value="1" oninput="document.getElementById('tv0').innerText=parseFloat(this.value).toFixed(1)"></div>
+      <div class="ctrl-item"><label>Inercia (I) <span id="iv0">5.0</span></label>
+        <input type="range" id="im0" min="1" max="20" step="0.5" value="5" oninput="document.getElementById('iv0').innerText=parseFloat(this.value).toFixed(1)"></div>
+      <div class="ctrl-item"><label>Amort. (k) <span id="kv0">0.50</span></label>
+        <input type="range" id="ka0" min="0.05" max="2" step="0.05" value="0.5" oninput="document.getElementById('kv0').innerText=parseFloat(this.value).toFixed(2)"></div>
+      <div class="ctrl-item"><label>Eje de torque</label>
+        <select id="ax0"><option value="z">Eje Z</option><option value="y">Eje Y</option><option value="x">Eje X</option><option value="xyz">Todos (XYZ)</option></select></div>
+      <div class="btn-row"><button class="btn" onclick="rst0()">↺ Reset</button></div>
+    </div>
+
+    <div class="card" id="cc1" style="display:none">
+      <h3>Controles</h3>
+      <div class="ctrl-item"><label>τ_max <span id="tv1">2.0</span></label>
+        <input type="range" id="tq1" min="0.5" max="8" step="0.5" value="2" oninput="document.getElementById('tv1').innerText=parseFloat(this.value).toFixed(1)"></div>
+      <div class="ctrl-item"><label>Amort. (k) <span id="kv1">0.50</span></label>
+        <input type="range" id="ka1" min="0.05" max="2" step="0.05" value="0.5" oninput="document.getElementById('kv1').innerText=parseFloat(this.value).toFixed(2)"></div>
+      <p style="font-size:10px;color:var(--dim);margin-top:6px;">🖱️ Clic sostenido en viewport = torque</p>
+    </div>
+
+    <div class="card" id="cc2" style="display:none">
+      <h3>Controles Cannon.js</h3>
+      <div class="ctrl-item"><label>Ángulo θ (°) <span id="av2">20</span></label>
+        <input type="range" id="ang2" min="5" max="55" step="1" value="20" oninput="document.getElementById('av2').innerText=this.value; rst2()"></div>
+      <div class="ctrl-item"><label>Fricción Cannon</label>
+        <select id="sp2" onchange="rst2()">
+          <option value="0.4_0.85">Sólida — alta fricción</option>
+          <option value="0.667_0.65">Hueca — fricción media</option>
+          <option value="0.5_0.45">Cilindro — baja fricción</option>
+        </select></div>
+      <div class="btn-row"><button class="btn" onclick="rst2()">↺ Reset</button></div>
+    </div>
+
+    <!-- Data -->
+    <div class="card" id="cd0">
+      <h3>Datos</h3>
+      <div class="data-grid">
+        <div class="di"><div class="lb">τ neto</div><div class="vl" id="d0t">—</div></div>
+        <div class="di"><div class="lb">α</div><div class="vl" id="d0a">—</div></div>
+        <div class="di"><div class="lb">ω</div><div class="vl" id="d0w">—</div></div>
+        <div class="di"><div class="lb">ω term.</div><div class="vl" id="d0wt">—</div></div>
+      </div>
+    </div>
+    <div class="card" id="cd1" style="display:none">
+      <h3>Estado Turbinas</h3>
+      <div id="td1" style="font-size:10px;line-height:2.2;color:var(--dim);">—</div>
+    </div>
+    <div class="card" id="cd2" style="display:none">
+      <h3>Datos Cannon.js</h3>
+      <div class="data-grid">
+        <div class="di"><div class="lb">v (Cannon)</div><div class="vl" id="d2v">—</div></div>
+        <div class="di"><div class="lb">ω (Cannon)</div><div class="vl" id="d2w">—</div></div>
+        <div class="di"><div class="lb">pos.x</div><div class="vl" id="d2x">—</div></div>
+        <div class="di"><div class="lb">pos.y</div><div class="vl" id="d2y">—</div></div>
+      </div>
+      <div id="d2s" style="font-size:10px;margin-top:6px;color:var(--accent2);">—</div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+// ─── Estado global ────────────────────────────────────────
+var currentTab = 0, pressing = false;
+
+function switchTab(n) {
+  currentTab = n;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',i===n));
+  ['ci','cc','cd'].forEach(function(p){
+    [0,1,2].forEach(function(i){
+      var el=document.getElementById(p+i); if(el) el.style.display=(i===n)?'':'none';
+    });
+  });
+  var labels=['SIM_01 · TORQUE_CUBE · p5.js WEBGL','SIM_02 · TURBINAS_3D · p5.js WEBGL','SIM_03 · RODADURA · Cannon.js + p5.js'];
+  document.getElementById('vp-label').innerText = labels[n];
+  document.getElementById('ctag').style.display = n===2 ? '' : 'none';
+}
+
+// ─── Cannon.js — mundo físico para Sim 2 ─────────────────
+var cannonWorld=null, cannonBall=null, cannonPlane=null, cannonFloor=null;
+var ballTrail = [];
+
+function buildCannon() {
+  ballTrail = [];
+  var sel   = document.getElementById('sp2').value.split('_');
+  var iFact = parseFloat(sel[0]);
+  var fric  = parseFloat(sel[1]);
+  var angDeg= parseFloat(document.getElementById('ang2').value);
+  var ang   = angDeg*Math.PI/180;
+  var R=0.28, m=1, g=14;
+
+  cannonWorld = new CANNON.World();
+  cannonWorld.gravity.set(0,-g,0);
+  cannonWorld.broadphase = new CANNON.NaiveBroadphase();
+  cannonWorld.solver.iterations = 25;
+
+  var bMat=new CANNON.Material('b'), pMat=new CANNON.Material('p');
+  cannonWorld.addContactMaterial(new CANNON.ContactMaterial(bMat,pMat,{friction:fric,restitution:0.05}));
+
+  var I = iFact*m*R*R;
+  cannonBall = new CANNON.Body({mass:m, material:bMat, linearDamping:0.01, angularDamping:0.02});
+  cannonBall.addShape(new CANNON.Sphere(R));
+  cannonBall.inertia.set(I,I,I); cannonBall.invInertia.set(1/I,1/I,1/I);
+  cannonBall.updateMassProperties();
+  cannonBall.position.set(-Math.cos(ang)*1.8, Math.sin(ang)*1.8+R+0.05, 0);
+  cannonWorld.addBody(cannonBall);
+
+  cannonPlane = new CANNON.Body({mass:0, material:pMat});
+  cannonPlane.addShape(new CANNON.Box(new CANNON.Vec3(2.5,0.07,0.7)));
+  cannonPlane.quaternion.setFromAxisAngle(new CANNON.Vec3(0,0,1),-ang);
+  cannonWorld.addBody(cannonPlane);
+
+  cannonFloor = new CANNON.Body({mass:0, material:pMat});
+  cannonFloor.addShape(new CANNON.Plane());
+  cannonFloor.quaternion.setFromAxisAngle(new CANNON.Vec3(1,0,0),-Math.PI/2);
+  cannonFloor.position.set(0,-0.42,0);
+  cannonWorld.addBody(cannonFloor);
+}
+
+window.rst0 = function(){ s0.rx=0;s0.ry=0;s0.rz=0;s0.wx=0;s0.wy=0;s0.wz=0; };
+window.rst2 = function(){ buildCannon(); };
+
+// ─── p5.js sketch en modo WEBGL ──────────────────────────
+var s0 = {rx:0,ry:0,rz:0,wx:0,wy:0,wz:0};
+var turbines = [
+  {angVelo:0,angle:0,I:1,  bladeLen:55, r:50,  col:[71,200,255], cx:-160,cy:0},
+  {angVelo:0,angle:0,I:5,  bladeLen:90, r:70,  col:[232,255,71], cx:0,   cy:0},
+  {angVelo:0,angle:0,I:81, bladeLen:150,r:100, col:[255,107,71], cx:170, cy:0}
+];
+
+var camTheta=0.6, camPhi=0.4, camR=420, dragging=false, lastMX=0, lastMY=0;
+
+new p5(function(p){
+
+  p.setup = function(){
+    var W=document.getElementById('viewport').clientWidth;
+    var H=document.getElementById('viewport').clientHeight;
+    var cnv=p.createCanvas(W,H,p.WEBGL);
+    cnv.parent('p5canvas');
+    cnv.mousePressed(function(){ dragging=true; pressing=true; lastMX=p.mouseX; lastMY=p.mouseY; });
+    cnv.mouseReleased(function(){ dragging=false; pressing=false; });
+    document.addEventListener('mousemove',function(){
+      if(!dragging) return;
+      camTheta-=(p.mouseX-lastMX)*0.007; camPhi-=(p.mouseY-lastMY)*0.007;
+      camPhi=p.constrain(camPhi,-1.4,1.4); lastMX=p.mouseX; lastMY=p.mouseY;
+    });
+    document.addEventListener('wheel',function(e){ camR=p.constrain(camR+e.deltaY*0.4,120,900); });
+    p.frameRate(60);
+    buildCannon();
+  };
+
+  p.windowResized=function(){
+    p.resizeCanvas(document.getElementById('viewport').clientWidth,
+                   document.getElementById('viewport').clientHeight);
+  };
+
+  p.draw=function(){
+    p.background(6,8,16);
+    var cx=camR*Math.cos(camPhi)*Math.sin(camTheta);
+    var cy=camR*Math.sin(camPhi);
+    var cz=camR*Math.cos(camPhi)*Math.cos(camTheta);
+    p.camera(cx,cy,cz,0,0,0,0,1,0);
+    p.ambientLight(40,50,70);
+    p.directionalLight(200,220,255,0.5,1,-0.8);
+    p.pointLight(71,200,255,-200,300,-200);
+
+    // Grilla
+    p.push(); p.translate(0,100,0);
+    p.stroke(22,32,60); p.strokeWeight(1); p.noFill();
+    for(var i=-8;i<=8;i++){
+      p.line(i*60,-1,-480,i*60,-1,480);
+      p.line(-480,-1,i*60,480,-1,i*60);
+    }
+    p.pop();
+
+    if(currentTab===0)      drawSim0(p);
+    else if(currentTab===1) drawSim1(p);
+    else                    drawSim2(p);
+  };
+
+}, 'p5canvas');
+
+// ══════════════════════════════════════════════════════════
+// SIM 0 — Cubo 3D con Torque  (p5.js puro)
+// ══════════════════════════════════════════════════════════
+function drawSim0(p){
+  var tq=parseFloat(document.getElementById('tq0').value);
+  var im=parseFloat(document.getElementById('im0').value);
+  var k =parseFloat(document.getElementById('ka0').value);
+  var ax=document.getElementById('ax0').value;
+  var dt=0.016;
+  var tz=0,ty=0,tx=0;
+  if(ax==='z'||ax==='xyz') tz=tq-k*s0.wz;
+  if(ax==='y'||ax==='xyz') ty=(ax==='xyz'?tq*0.7:tq)-k*s0.wy;
+  if(ax==='x'||ax==='xyz') tx=(ax==='xyz'?tq*0.5:tq)-k*s0.wx;
+  if(ax==='z'){tx=-k*s0.wx;ty=-k*s0.wy;}
+  if(ax==='y'){tx=-k*s0.wx;tz=-k*s0.wz;}
+  if(ax==='x'){ty=-k*s0.wy;tz=-k*s0.wz;}
+  s0.wx+=(tx/im)*dt; s0.wy+=(ty/im)*dt; s0.wz+=(tz/im)*dt;
+  s0.rx+=s0.wx*dt;   s0.ry+=s0.wy*dt;   s0.rz+=s0.wz*dt;
+
+  p.push();
+  p.rotateX(s0.rx); p.rotateY(s0.ry); p.rotateZ(s0.rz);
+  p.fill(0,40,70,200); p.stroke(71,200,255,200); p.strokeWeight(1.5);
+  p.box(140);
+  p.strokeWeight(3);
+  p.stroke(255,60,60);  p.line(0,0,0,100,0,0);
+  p.stroke(60,255,60);  p.line(0,0,0,0,-100,0);
+  p.stroke(60,60,255);  p.line(0,0,0,0,0,100);
+  p.noStroke(); p.fill(71,200,255);
+  [[-70,-70,-70],[70,-70,-70],[70,70,-70],[-70,70,-70],
+   [-70,-70,70],[70,-70,70],[70,70,70],[-70,70,70]].forEach(function(v){
+    p.push(); p.translate(v[0],v[1],v[2]); p.sphere(6); p.pop();
+  });
+  p.fill(255,107,71); p.sphere(10);
+  p.pop();
+
+  p.strokeWeight(2);
+  p.stroke(255,60,60,80);  p.line(0,0,0,180,0,0);
+  p.stroke(60,255,60,80);  p.line(0,0,0,0,-180,0);
+  p.stroke(60,60,255,80);  p.line(0,0,0,0,0,180);
+
+  var omega=Math.sqrt(s0.wx**2+s0.wy**2+s0.wz**2);
+  document.getElementById('d0t').innerText =tz.toFixed(3);
+  document.getElementById('d0a').innerText =(tz/im).toFixed(4);
+  document.getElementById('d0w').innerText =omega.toFixed(3);
+  document.getElementById('d0wt').innerText=k>0?(tq/k).toFixed(3):'∞';
+}
+
+// ══════════════════════════════════════════════════════════
+// SIM 1 — Turbinas 3D  (p5.js puro)
+// ══════════════════════════════════════════════════════════
+function drawSim1(p){
+  var tqMax=parseFloat(document.getElementById('tq1').value);
+  var k    =parseFloat(document.getElementById('ka1').value);
+  var tq   =pressing?tqMax:0, dt=0.016;
+  var names=['PEQUEÑA','MEDIANA','GRANDE'], html='';
+
+  turbines.forEach(function(t,idx){
+    t.angVelo+=(tq-k*t.angVelo)/t.I*dt;
+    t.angle  +=t.angVelo*dt;
+
+    p.push(); p.translate(t.cx,-60,0);
+    p.fill(20,40,70); p.stroke(40,80,120); p.strokeWeight(1);
+    p.push(); p.translate(0,80,0); p.cylinder(6,160); p.pop();
+    p.fill(t.col[0],t.col[1],t.col[2]); p.noStroke();
+    p.push(); p.translate(0,-10,0); p.sphere(t.r*0.22); p.pop();
+    p.push(); p.translate(0,-10,0); p.rotateZ(t.angle);
+    for(var i=0;i<3;i++){
+      p.push(); p.rotateZ((i/3)*p.TWO_PI);
+      p.translate(t.bladeLen/2,0,0);
+      p.fill(t.col[0],t.col[1],t.col[2],200);
+      p.stroke(t.col[0],t.col[1],t.col[2]); p.strokeWeight(0.5);
+      p.box(t.bladeLen,8,t.r*0.18); p.pop();
+    }
+    p.pop(); p.pop();
+
+    html+='<span style="color:rgb('+t.col+')">'+names[idx]+'</span>: I='+t.I+' ω='+t.angVelo.toFixed(3)+'<br>';
+  });
+  document.getElementById('td1').innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// SIM 2 — Rodadura 3D con CANNON.JS
+// Cannon.js calcula toda la física
+// p5.js WEBGL lee posición/rotación y dibuja
+// ══════════════════════════════════════════════════════════
+function drawSim2(p){
+  if(!cannonWorld||!cannonBall) return;
+
+  // ── Cannon step ────────────────────────────────────────
+  cannonWorld.step(1/60);
+
+  var bp=cannonBall.position, bq=cannonBall.quaternion;
+  var bv=cannonBall.velocity,  bw=cannonBall.angularVelocity;
+
+  // Escala: Cannon usa metros, p5 usa píxeles
+  var SC=280;
+  var bx=bp.x*SC, by=-bp.y*SC, bz=bp.z*SC;
+  var R=0.28*SC;
+
+  // Rastro
+  ballTrail.push({x:bx,y:by,z:bz});
+  if(ballTrail.length>100) ballTrail.shift();
+
+  // ── Dibujar ────────────────────────────────────────────
+  var ang=parseFloat(document.getElementById('ang2').value)*Math.PI/180;
+
+  // Plano inclinado
+  p.push();
+  p.rotateZ(-ang);
+  p.fill(10,30,70,200); p.stroke(71,200,255,160); p.strokeWeight(1.5);
+  p.box(SC*5.2,14,SC*1.4);
+  p.stroke(71,200,255,50); p.strokeWeight(1);
+  for(var i=-4;i<=4;i++) p.line(i*SC*0.6,-8,-SC*0.6, i*SC*0.6,-8,SC*0.6);
+  p.pop();
+
+  // Suelo
+  p.push(); p.translate(0,SC*0.42+7,0);
+  p.fill(8,14,26,200); p.stroke(20,35,60); p.strokeWeight(1);
+  p.box(SC*6,8,SC*2);
+  p.pop();
+
+  // Rastro
+  if(ballTrail.length>2){
+    p.noFill(); p.strokeWeight(2);
+    for(var i=1;i<ballTrail.length;i++){
+      var a=p.map(i,0,ballTrail.length,0,200);
+      p.stroke(71,200,255,a);
+      var t0=ballTrail[i-1], t1=ballTrail[i];
+      p.line(t0.x,t0.y,t0.z, t1.x,t1.y,t1.z);
+    }
+  }
+
+  // Bola — rotación desde quaternion de Cannon
+  p.push();
+  p.translate(bx,by,bz);
+
+  // Aplicar rotación del quaternion de Cannon
+  var q=bq;
+  // Convertir quaternion CANNON → eje-ángulo para p5
+  var angle=2*Math.acos(q.w);
+  var s=Math.sqrt(1-q.w*q.w);
+  if(s<0.001){ s=1; }
+  p.rotate(angle, [q.x/s, q.y/s, q.z/s]);
+
+  p.fill(232,200,40,220); p.stroke(255,220,80,180); p.strokeWeight(1);
+  p.sphere(R);
+
+  // Líneas de meridiano para ver rotación
+  p.noFill(); p.stroke(255,140,0,120); p.strokeWeight(1.5);
+  for(var a=0;a<4;a++){
+    p.push(); p.rotateY((a/4)*p.TWO_PI);
+    p.beginShape();
+    for(var t=0;t<=16;t++){
+      var phi=p.map(t,0,16,-p.HALF_PI,p.HALF_PI);
+      p.vertex(R*Math.cos(phi),R*Math.sin(phi),0);
+    }
+    p.endShape();
+    p.pop();
+  }
+  p.push(); p.rotateX(p.HALF_PI);
+  p.beginShape();
+  for(var t=0;t<=16;t++){
+    var th=p.map(t,0,16,0,p.TWO_PI);
+    p.vertex(R*Math.cos(th),R*Math.sin(th),0);
+  }
+  p.endShape(p.CLOSE);
+  p.pop();
+  p.pop();
+
+  // Flecha velocidad (roja)
+  var speed=Math.sqrt(bv.x**2+bv.y**2+bv.z**2);
+  if(speed>0.01){
+    p.push(); p.translate(bx,by,bz);
+    p.stroke(255,60,60,220); p.strokeWeight(3);
+    var vl=Math.min(speed*SC*0.3,R*2);
+    p.line(0,0,0, bv.x/speed*vl, -bv.y/speed*vl, bv.z/speed*vl);
+    p.pop();
+  }
+
+  // Flecha eje angular (cian)
+  var omega=Math.sqrt(bw.x**2+bw.y**2+bw.z**2);
+  if(omega>0.05){
+    p.push(); p.translate(bx,by,bz);
+    p.stroke(71,200,255,200); p.strokeWeight(3);
+    var wl=Math.min(omega*SC*0.15,R*1.8);
+    p.line(0,0,0, bw.x/omega*wl, -bw.y/omega*wl, bw.z/omega*wl);
+    p.pop();
+  }
+
+  // Datos
+  var rOmega=(0.28)*omega;
+  document.getElementById('d2v').innerText=speed.toFixed(3);
+  document.getElementById('d2w').innerText=omega.toFixed(3);
+  document.getElementById('d2x').innerText=bp.x.toFixed(3);
+  document.getElementById('d2y').innerText=bp.y.toFixed(3);
+  document.getElementById('d2s').innerText=
+    Math.abs(speed-rOmega)<0.08?'✅ v ≈ r·ω (Cannon confirma)':
+    speed<0.05?'⏳ esperando...':'🔄 acelerando...';
+}
+
+switchTab(0);
+</script>
+</body>
+</html>
